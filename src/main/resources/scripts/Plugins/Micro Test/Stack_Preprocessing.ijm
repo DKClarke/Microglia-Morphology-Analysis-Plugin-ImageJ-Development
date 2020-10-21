@@ -141,14 +141,24 @@ function getIniData(iniFolder, iniTextValuesMicrons) {
 		//We create a start point that is the index of our iniTextStringsPre + iniTextIndicesPreAdds
 		startPoint = indexOf(iniText, iniTextStringsPre[i])+iniTextIndicesPreAdds[i];
 
-		//If we're on the last string, we just grab the whole end from the start of the word "frames"
-		if(i == iniTextStringsPre.length-1) {
-			realString = substring(iniText, startPoint);
+		//Get a substring that starts at our startPoint i.e. where the numbers of our current string start
+		checkString = substring(iniText, startPoint);
 
-		//Else get it from the start until the start of the next value of interest
-		} else {
-			realString = substring(iniText, startPoint, indexOf(iniText, iniTextStringsPre[(i+1)]));
+		//For each character, if it isn't numeric add 1 to the hitCount and if we hit
+		//two consecutive non-numerics, go back to pull out the values and store them
+		hitCount = 0;
+		for(j=0; j<lengthOf(checkString); j++) {
+			if(charCodeAt(checkString, j) < 48 || charCodeAt(checkString, j) > 57) {
+				hitCount = hitCount + 1;
+				if(hitCount == 2) {
+					realString = substring(checkString, 0, j);
+					print(realString);
+					break;
+				}
+			}
 		}
+
+		//Parse our values
 		iniTextValuesMicrons[i] = parseFloat(realString);
 	}
 }
@@ -604,10 +614,21 @@ function checkForSameCell(nameArray, currentCell, keptArray, currentKeptDefault,
 //////////////////////// Main user input sections //////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+Dialog.create("Pick Directory");
+Dialog.addMessage("Choose morphology analysis working directory");
+Dialog.show();
+
+setOption("JFileChooser", true);
 MorphologyProcessing = getDirectory("Choose morphology analysis working directory");
+
+Dialog.create("Pick Directory");
+Dialog.addMessage("Choose the image storage directory");
+Dialog.show();
 //Get the parent 2P directory i.e. where all the raw 2P images are stored
 directoryName = getDirectory("Choose the image storage directory");
-	
+setOption("JFileChooser", false);
+
+
 //Here we create an array to store the full name of the directories we'll be 
 //working with within our morphology processing directory
 directories=newArray(MorphologyProcessing+"Input" + File.separator, 
@@ -971,22 +992,23 @@ for(i=0; i<imagesInput.length; i++) {
 		print("Preprocessing ", imageNames[0]); 
 		print(imagesInput[i] + " opened");
 
-			//Array to store the values we need to calibrate our image with
-			iniTextValuesMicrons = newArray(5);
-			//Index 0 is xPxlSz, then yPxlSz, zPxlSz, ZperT, FperZ
+		//Array to store the values we need to calibrate our image with
+		iniTextValuesMicrons = newArray(5);
+		//Index 0 is xPxlSz, then yPxlSz, zPxlSz, ZperT, FperZ
+		
+		getIniData(directoryName, iniTextValuesMicrons);
 			
-			getIniData(directoryName, iniTextValuesMicrons);
-				
-			//Calculate the number of timepoints in the image
-			timepoints = (iniTextValuesMicrons[3] * iniTextValuesMicrons[4])/nSlices;
-			framesReorder = iniTextValuesMicrons[3]/timepoints;
-	
-			//Convert the image to 8-bit, then adjust the contrast across all slices 
-			//to normalise brightness to that of the top slice in the image
-			selectWindow(imagesInput[i]);
-			print("Converting to 8-bit");
-			run("8-bit");
-			if(false) {
+		//Calculate the number of timepoints in the image
+		timepoints = (iniTextValuesMicrons[3] * iniTextValuesMicrons[4])/nSlices;
+		framesReorder = iniTextValuesMicrons[3]/timepoints;
+
+		//Convert the image to 8-bit, then adjust the contrast across all slices 
+		//to normalise brightness to that of the top slice in the image
+		selectWindow(imagesInput[i]);
+		print("Converting to 8-bit");
+		run("8-bit");
+		
+		if(false) {
 			print("Stack Contrast Adjusting");
 			selectWindow(imagesInput[i]);
 			setSlice(1);
@@ -997,358 +1019,358 @@ for(i=0; i<imagesInput.length; i++) {
 			selectWindow(stackWindow);
 			rename(imagesInput[i]);
 			run("8-bit");
-			}
+		}
 
-			//Increase the canvas size of the image by 100 pixels in x and y so that 
-			//when we run registration on the image, if the image drifts we don't lose
-			//any of it over the edges of the canvas
-			getDimensions(width, height, channels, slices, frames);
-			run("Canvas Size...", "width="+(width+500)+" height="+(height+500)+" position=Center zero");
+		//Increase the canvas size of the image by 100 pixels in x and y so that 
+		//when we run registration on the image, if the image drifts we don't lose
+		//any of it over the edges of the canvas
+		getDimensions(width, height, channels, slices, frames);
+		run("Canvas Size...", "width="+(width+500)+" height="+(height+500)+" position=Center zero");
 
-			//Start motion artifact removal here
-			print("Starting motion artifact removal");
+		//Start motion artifact removal here
+		print("Starting motion artifact removal");
 
-			//This array stores information we need to refer to during motion artifact 
-			//removal - i.e. the current timepoint we're processing as well as the 
-			//current z position we're processing, and the timepoint and z position 
-			//labels we want to use (these are appended with 0's if necessary so that
-			//all timepoints and z positions have the same number of digits)
-			motionArtifactRemoval = newArray(0,0,0,0);
-			//[0] is tNumber, [1] is zSlice, [2] is tOut, [3] is zLabel
+		//This array stores information we need to refer to during motion artifact 
+		//removal - i.e. the current timepoint we're processing as well as the 
+		//current z position we're processing, and the timepoint and z position 
+		//labels we want to use (these are appended with 0's if necessary so that
+		//all timepoints and z positions have the same number of digits)
+		motionArtifactRemoval = newArray(0,0,0,0);
+		//[0] is tNumber, [1] is zSlice, [2] is tOut, [3] is zLabel
 
-			//This is an array we fill with the names of the processed timepoint stacks
-			timepointNamesCutoff = newArray(timepoints);
+		//This is an array we fill with the names of the processed timepoint stacks
+		timepointNamesCutoff = newArray(timepoints);
 
-			//If we're working with manually chosen frames, get them out as imageNumberArray, else
-			//generate imageNumberArray as all the slices in the image, and copy this to a forLap object
-			//which we use to select frames for our laplacian average - also, if we're not doing manual analysis but there exists a
-			//manually chosen frame table for our image, use that instead
-			if(manCorrect == true || manCorrect == false && File.exists(directories[1] +substring(imagesInput[i], 0, indexOf(imagesInput[i], ".tif")) + "/Slices To Use.csv")==1) {
+		//If we're working with manually chosen frames, get them out as imageNumberArray, else
+		//generate imageNumberArray as all the slices in the image, and copy this to a forLap object
+		//which we use to select frames for our laplacian average - also, if we're not doing manual analysis but there exists a
+		//manually chosen frame table for our image, use that instead
+		if(manCorrect == true || manCorrect == false && File.exists(directories[1] +substring(imagesInput[i], 0, indexOf(imagesInput[i], ".tif")) + "/Slices To Use.csv")==1) {
 
-				open(directories[1] + substring(imagesInput[i], 0, indexOf(imagesInput[i], ".tif")) + "/Slices To Use.csv");
-				selectWindow("Slices To Use.csv");
-				imageNumberArray = Table.getColumn("Slices");
-				selectWindow("Slices To Use.csv");
-				run("Close");
-				
-			} else {
-
-				//This makes an array with a sequence 0,1,2...slices
-				imageNumberArray = Array.getSequence(nSlices+1); 
-	
-				//This array is used in motion artifact removal to store the image numbers 
-				//being processed that contains 1,2,3...slices
-				imageNumberArray = Array.slice(imageNumberArray, 1, imageNumberArray.length); 
-				forLap = Array.copy(imageNumberArray);
-				
-			}
-			
-
-			//Reorder each individual timepoint stack in Z so that any out of position slices are positioned correctly for motion artifact detection and removal
-			//Go through each timepoint
-			for(k=0; k<timepoints; k++) {
-
-				//Set our current z slice to 0
-				motionArtifactRemoval[1] = 0;
-				selectWindow(imagesInput[i]);
-				
-				//Get out the current timepoint, split it into a stack for each frame (i.e. 14 stacks of 26 slices)
-				run("Duplicate...", "duplicate frames="+(k+1)+"");
-				selectWindow(substring(imagesInput[i], 0, indexOf(imagesInput[i], ".tif")) + "-1.tif");
-				currentTimepoint=getTitle();	
-				rename("Timepoint");
-					
-				slicesForZ = nSlices;
-
-				//This array is used to store the square difference between images and 
-				//their references in artifact removal
-				intDenDiff=newArray(slicesForZ); 
-		
-				//This array is used to store which images pass the motion artifact 
-				//removal process using the cutoff method
-				imagesToCombineCutoff=newArray(iniTextValuesMicrons[3]); 
-			
-				//Loop through all Z points in our image
-				for(i0=0; i0<(iniTextValuesMicrons[3]); i0++) {
-		
-					//If our z or t labels are below 10, prefix with a 0
-					for(i1=0; i1<2; i1++) {
-						if(motionArtifactRemoval[i1]<10) {
-							motionArtifactRemoval[i1+2] = "0" + motionArtifactRemoval[i1];
-						} else {
-							motionArtifactRemoval[i1+2] = "" + motionArtifactRemoval[i1];
-						}
-					}
-					
-					
-					//If automatically selecting frames and we dont have a store of manually selected frames
-					if(manCorrect == false && File.exists(directories[1] +substring(imagesInput[i], 0, indexOf(imagesInput[i], ".tif")) + "/Slices To Use.csv")==0) {
-
-						//Here we create substacks from our input image - one substack 
-						//corresponding to all the frames at one Z point
-						subName="Substack ("+((iniTextValuesMicrons[4]*i0)+1)+"-"+(iniTextValuesMicrons[4]*(i0+1))+")";
-						selectWindow("Timepoint");
-						run("Make Substack...", " slices="+((iniTextValuesMicrons[4]*i0)+1)+"-"+(iniTextValuesMicrons[4]*(i0+1))+"");
-						rename(subName);
-					
-						//As a way of detection blur in our imgaes, we use a laplacian of gaussian filter on our stack,
-						//https://www.pyimagesearch.com/2015/09/07/blur-detection-with-opencv/
-						//https://stackoverflow.com/questions/7765810/is-there-a-way-to-detect-if-an-image-is-blurry
-								
-						//We register our substack before running it through the laplacian filter
-						print("Registering and removing artifacts from", subName);
-						selectWindow(subName);
-						subSlices=nSlices;
-						run("FeatureJ Laplacian", "compute smoothing=1.0");
-					
-						//Close our pre laplacian image and rename our laplacian filtered image
-						selectWindow(subName);
-						rename("toKeep");
-						selectWindow(subName + " Laplacian");
-						rename(subName);
-						imageSlices = nSlices;
-							
-						//For each slice in the stack, store the maximum pixel value of the laplacian filtered slice
-						for(currSlice = 1; currSlice < (imageSlices+1); currSlice++) {
-							setSlice(currSlice);
-							getRawStatistics(nPixels, mean, min, max, std, hist);
-							intDenDiff[((currSlice-1)+(i0*nSlices))] = max;
-						}
-	
-						//Close the laplacian filtered image
-						selectWindow(subName);
-						run("Close");
-						
-						//Cutoff routine
-							
-						//This cutoff routine takes the measured square differences of each 
-						//slice, and ranks them highest to lowest. We then select the best of 
-						//the images (those with the lowest square differences). In this case we 
-						//select the FramesToKeep lowest images i.e. if we want to keep 5 frames 
-						//per TZ point, we keep the 5 lowest square difference frames per FZ.
-							
-						//Here we create an array that contains the intDenDiff values that 
-						//correspond to the substack we're currently processing
-						currentStackDiffs = Array.slice(intDenDiff, (i0*subSlices), (subSlices+(i0*subSlices)));
-				
-						//Here we rank the array twice, this is necessary to get the ranks of 
-						//the slices so that the highest sq diff value has the highest rank and 
-						//vice versa
-						IMTArrayCutoffRank1=Array.rankPositions(currentStackDiffs);
-						IMTArrayCutoffRank2=Array.rankPositions(IMTArrayCutoffRank1);
-											
-						//Here we compare the ranks to the frames to keep - if the rank is above 
-						//our number of frames to keep, i.e. worse ranked than our threshold, we 
-						//set the slice number to 0 in the array. This allows us to store only 
-						//the slice numbers of the slices we want to use
-						for (i1=0;i1<subSlices;i1++) {
-							//print(IMTArrayCutoffRank2[i1]);
-							//print(intDenDiff[i1]);
-							if (IMTArrayCutoffRank2[i1]<(IMTArrayCutoffRank2.length-lapFrames)) {
-								forLap[i1+(i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3])))] = 0;
-							}
-							//print(forLap[i1+(i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3])))]);
-						}
-
-						//Here we create a new array that stores the slice numbers for the 
-						//substack we're currently working with
-						currentStackSlices = Array.slice(forLap, ((i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3])))), (subSlices+((i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3]))))));
-					
-					} else {
-						
-						subSlices = iniTextValuesMicrons[4];
-						
-						//Here we create a new array that stores the slice numbers for the 
-						//substack we're currently working with
-						currentStackSlices = Array.slice(imageNumberArray, (i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3]))),  (subSlices+((i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3]))))));
-	
-					}
-							
-					getAndProcessSlices(currentStackSlices, motionArtifactRemoval, k);
-
-					//If automatically selecting frames and we dont have a store of manually selected frames
-					if(manCorrect == false && File.exists(directories[1] + substring(imagesInput[i], 0, indexOf(imagesInput[i], ".tif")) + "/Slices To Use.csv")==0) {
-		
-						//Stick our average projected image in front of the ZT point to register then by translation (to minimize differences when comparing them)
-						//before then removing the average projection from the stack
-						run("Concatenate...", " title = wow image1=[T"+motionArtifactRemoval[2]+" Z"+motionArtifactRemoval[3]+"] image2=toKeep image3=[-- None --]");
-						if(false) {
-						run("MultiStackReg", "stack_1=[Untitled] action_1=Align file_1=[]  stack_2=None action_2=Ignore file_2=[] transformation=[Translation]");
-						}
-						selectWindow("Untitled");
-						run("Make Substack...", "delete slices=1");
-						selectWindow("Substack (1)");
-						rename("T"+motionArtifactRemoval[2]+" Z"+motionArtifactRemoval[3]);
-						selectWindow("Untitled");
-						rename("toKeep");
-
-						//Calculate the difference between the average projection and the stack
-						imageCalculator("Difference create stack", "toKeep", "T"+motionArtifactRemoval[2]+" Z"+motionArtifactRemoval[3]);
-					
-						//Measure the difference (mean grey value) for each slice - ideally all this code should be put into a function since it
-						//is a repeat of the laplacian frame selection from earlier
-						selectWindow("Result of toKeep");
-						keepSlices = nSlices;
-						diffArray = newArray(keepSlices);
-						for(currSlice = 1; currSlice < (keepSlices+1); currSlice++) {
-							setSlice(currSlice);
-							getRawStatistics(nPixels, mean, min, max, std, hist);
-							diffArray[currSlice-1]= mean;
-						}
-						selectWindow("Result of toKeep");
-						run("Close");
-						selectWindow("toKeep");
-						run("Close");
-						selectWindow("T"+motionArtifactRemoval[2]+" Z"+motionArtifactRemoval[3]);
-						run("Close");
-
-						//Here we rank the array twice, this is necessary to get the ranks of 
-						//the slices so that the highest sq diff value has the highest rank and 
-						//vice versa
-						IMTArrayCutoffRank1=Array.rankPositions(diffArray);
-						IMTArrayCutoffRank2=Array.rankPositions(IMTArrayCutoffRank1);
-											
-						//Here we compare the ranks to the frames to keep - if the rank is above 
-						//our number of frames to keep, i.e. worse ranked than our threshold, we 
-						//set the slice number to 0 in the array. This allows us to store only 
-						//the slice numbers of the slices we want to use
-						for (i1=0;i1<subSlices;i1++) {
-							if (IMTArrayCutoffRank2[i1]>(fToKeep-1)) {
-								imageNumberArray[i1+(i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3])))] = 0;
-							}
-						}
-			
-						//Here we create a new array that stores the slice numbers for the 
-						//substack we're currently working with
-						currentStackSlices = Array.slice(imageNumberArray, ((i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3])))), (subSlices+((i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3]))))));
-		
-						getAndProcessSlices(currentStackSlices, motionArtifactRemoval, k);
-
-					}
-			
-					//At the slice index, add a string of the image number, and its t and z 
-					//labels to the imagesToCombineCutoff array - this is in the format 
-					//needed to be used with the image concatenator as we will be 
-					//concatenating our Z slices together
-					imagesToCombineCutoff[motionArtifactRemoval[1]]="image"+(motionArtifactRemoval[1]+1)+"=[T"+motionArtifactRemoval[2]+" Z"+motionArtifactRemoval[3]+"] ";
-			
-					//Increase the zSlice number
-					motionArtifactRemoval[1]++;
-		
-					//If we've reached the end of our timepoint (as microglia morphology is 
-					//only done on a single timepoint, this just means we've hit the end of 
-					//the unique z positions in our stack), we concatenate them all together 
-					//to get a single timepoint
-					if(motionArtifactRemoval[1]==iniTextValuesMicrons[3]) {
-								
-						//This strung loop strings together the names stored in the 
-						//arrayDuring into a format that can be used to concatenate only the 
-						//selected open images
-						strung="";
-						for (i1=0; i1<imagesToCombineCutoff.length; i1++) {
-							strung +=  imagesToCombineCutoff[i1];
-						}	
-			
-						//Here we concatenate all the images we're keeping and rename it 
-						//according to the timepoint label stored in motionArtifactRemoval
-						run("Concatenate...", "title=[T"+motionArtifactRemoval[2]+"] "+strung+"");
-			
-						//Reorder the image in Z just to make sure everything lines up, before 
-						//registering it
-
-						selectWindow("T"+motionArtifactRemoval[2]);
-						run("8-bit");
-						print("Reordering and registering T", motionArtifactRemoval[2]);
-						if(false) {
-						run("MultiStackReg", "stack_1=[T"+motionArtifactRemoval[2]+"] action_1=Align file_1=[] stack_2=None action_2=Ignore file_2[] transformation=[Translation]");
-						}
-						selectWindow("T"+motionArtifactRemoval[2]);
-						run("8-bit");
-						zSpaceCorrection("T"+motionArtifactRemoval[2], (iniTextValuesMicrons[3]*5), "T"+motionArtifactRemoval[2]);
-						selectWindow("T"+motionArtifactRemoval[2]);
-						run("8-bit");
-						if(false) {
-						run("MultiStackReg", "stack_1=[T"+motionArtifactRemoval[2]+"] action_1=Align file_1=[] stack_2=None action_2=Ignore file_2[] transformation=[Affine]");
-						}
-						selectWindow("T"+motionArtifactRemoval[2]);
-						run("8-bit");
-						print("Done");
-										
-						//If we're only keeping a single frame (which means we won't have 
-						//average projected our image earlier function) then we median blur 
-						//our image 
-						if(fToKeep==1) {
-							selectWindow("T"+motionArtifactRemoval[2]);
-							run("Median 3D...", "x=1 y=1 z=1");
-						}
-		
-						timepointNamesCutoff[k] = "T"+motionArtifactRemoval[2];
-				
-					}
-	
-				}
-
-				selectWindow("Timepoint");
-				run("Close");
-		
-				motionArtifactRemoval[0]++;
-				
-			}
-	
-			//Close the original input image and concatenate all the registered timepoint images
-			selectWindow(imagesInput[i]);
+			open(directories[1] + substring(imagesInput[i], 0, indexOf(imagesInput[i], ".tif")) + "/Slices To Use.csv");
+			selectWindow("Slices To Use.csv");
+			imageNumberArray = Table.getColumn("Slices");
+			selectWindow("Slices To Use.csv");
 			run("Close");
-	
-			selectWindow(timepointNamesCutoff[(timepoints-1)]);
-			run("Duplicate...", "duplicate");
-			rename(timepointNamesCutoff[(timepoints-1)] + "Mask");
-			setThreshold(1,255);
-			run("Convert to Mask", "method=Default background=Dark");
-				
-			//Min project the mask showing all common pixels to get a single image that we turn into a selection, that we then impose on our concatenated stacks, turn into a proper square,
-			//and then create a new image from the concatenate stacks that should contain no blank space
-			selectWindow(timepointNamesCutoff[(timepoints-1)] + "Mask");
-			run("Z Project...", "projection=[Max Intensity]");
-			run("Create Selection");
-			run("To Bounding Box");
-			run("Duplicate...", "duplicate");
-			rename("dup");
-
-			selectWindow(timepointNamesCutoff[(timepoints-1)] + "Mask");
-			run("Close");
-			selectWindow(timepointNamesCutoff[(timepoints-1)]);
-			run("Close");
-	
-			//As this isn't a timelapse experiment, we can close our original input 
-			//image and rename our registered timepoint as the input image
-			selectWindow("dup");
-			rename(imagesInput[i]);
-			run("Select None");
 			
-			//Here we check that the image is calibrated - if not we just recalibrate 
-			//using the iniTextValuesMicrons data
-			getPixelSize(unit, pixelWidth, pixelHeight);
-			if(unit!="um") {
-				selectWindow(imagesInput[i]);
-				getDimensions(width, height, channels, slices, frames);
-				run("Properties...", "channels="+channels+" slices="+slices+" frames="+frames+" unit=um pixel_width="+iniTextValuesMicrons[0]+" pixel_height="+iniTextValuesMicrons[1]+" voxel_depth="+iniTextValuesMicrons[2]+"");
-			}
+		} else {
 
-			//If we haven't made an output directory for our input image in the output 
-			//folder, we make it
-			if(File.exists(directories[1]+imageNames[3]+"/")==0) {
-				File.makeDirectory(directories[1]+imageNames[3]+"/");
-			}
+			//This makes an array with a sequence 0,1,2...slices
+			imageNumberArray = Array.getSequence(nSlices+1); 
 
-			selectWindow(imagesInput[i]);
-			saveAs("tiff", directories[1]+imageNames[3]+"/" + imageNames[3]+ " processed.tif");
-
-			wasMoved = File.rename(directories[0]+imagesInput[i], directories[2]+imagesInput[i]);
-			if(wasMoved == 0) {
-				print("Issue with moving image");
-				waitForUser("Issue with moving image");
-			}
+			//This array is used in motion artifact removal to store the image numbers 
+			//being processed that contains 1,2,3...slices
+			imageNumberArray = Array.slice(imageNumberArray, 1, imageNumberArray.length); 
+			forLap = Array.copy(imageNumberArray);
 			
 		}
+			
+
+		//Reorder each individual timepoint stack in Z so that any out of position slices are positioned correctly for motion artifact detection and removal
+		//Go through each timepoint
+		for(k=0; k<timepoints; k++) {
+
+			//Set our current z slice to 0
+			motionArtifactRemoval[1] = 0;
+			selectWindow(imagesInput[i]);
+			
+			//Get out the current timepoint, split it into a stack for each frame (i.e. 14 stacks of 26 slices)
+			run("Duplicate...", "duplicate frames="+(k+1)+"");
+			selectWindow(substring(imagesInput[i], 0, indexOf(imagesInput[i], ".tif")) + "-1.tif");
+			currentTimepoint=getTitle();	
+			rename("Timepoint");
+				
+			slicesForZ = nSlices;
+
+			//This array is used to store the square difference between images and 
+			//their references in artifact removal
+			intDenDiff=newArray(slicesForZ); 
+	
+			//This array is used to store which images pass the motion artifact 
+			//removal process using the cutoff method
+			imagesToCombineCutoff=newArray(iniTextValuesMicrons[3]); 
+		
+			//Loop through all Z points in our image
+			for(i0=0; i0<(iniTextValuesMicrons[3]); i0++) {
+	
+				//If our z or t labels are below 10, prefix with a 0
+				for(i1=0; i1<2; i1++) {
+					if(motionArtifactRemoval[i1]<10) {
+						motionArtifactRemoval[i1+2] = "0" + motionArtifactRemoval[i1];
+					} else {
+						motionArtifactRemoval[i1+2] = "" + motionArtifactRemoval[i1];
+					}
+				}
+				
+				
+				//If automatically selecting frames and we dont have a store of manually selected frames
+				if(manCorrect == false && File.exists(directories[1] +substring(imagesInput[i], 0, indexOf(imagesInput[i], ".tif")) + "/Slices To Use.csv")==0) {
+
+					//Here we create substacks from our input image - one substack 
+					//corresponding to all the frames at one Z point
+					subName="Substack ("+((iniTextValuesMicrons[4]*i0)+1)+"-"+(iniTextValuesMicrons[4]*(i0+1))+")";
+					selectWindow("Timepoint");
+					run("Make Substack...", " slices="+((iniTextValuesMicrons[4]*i0)+1)+"-"+(iniTextValuesMicrons[4]*(i0+1))+"");
+					rename(subName);
+				
+					//As a way of detection blur in our imgaes, we use a laplacian of gaussian filter on our stack,
+					//https://www.pyimagesearch.com/2015/09/07/blur-detection-with-opencv/
+					//https://stackoverflow.com/questions/7765810/is-there-a-way-to-detect-if-an-image-is-blurry
+							
+					//We register our substack before running it through the laplacian filter
+					print("Registering and removing artifacts from", subName);
+					selectWindow(subName);
+					subSlices=nSlices;
+					run("FeatureJ Laplacian", "compute smoothing=1.0");
+				
+					//Close our pre laplacian image and rename our laplacian filtered image
+					selectWindow(subName);
+					rename("toKeep");
+					selectWindow(subName + " Laplacian");
+					rename(subName);
+					imageSlices = nSlices;
+						
+					//For each slice in the stack, store the maximum pixel value of the laplacian filtered slice
+					for(currSlice = 1; currSlice < (imageSlices+1); currSlice++) {
+						setSlice(currSlice);
+						getRawStatistics(nPixels, mean, min, max, std, hist);
+						intDenDiff[((currSlice-1)+(i0*nSlices))] = max;
+					}
+
+					//Close the laplacian filtered image
+					selectWindow(subName);
+					run("Close");
+					
+					//Cutoff routine
+						
+					//This cutoff routine takes the measured square differences of each 
+					//slice, and ranks them highest to lowest. We then select the best of 
+					//the images (those with the lowest square differences). In this case we 
+					//select the FramesToKeep lowest images i.e. if we want to keep 5 frames 
+					//per TZ point, we keep the 5 lowest square difference frames per FZ.
+						
+					//Here we create an array that contains the intDenDiff values that 
+					//correspond to the substack we're currently processing
+					currentStackDiffs = Array.slice(intDenDiff, (i0*subSlices), (subSlices+(i0*subSlices)));
+			
+					//Here we rank the array twice, this is necessary to get the ranks of 
+					//the slices so that the highest sq diff value has the highest rank and 
+					//vice versa
+					IMTArrayCutoffRank1=Array.rankPositions(currentStackDiffs);
+					IMTArrayCutoffRank2=Array.rankPositions(IMTArrayCutoffRank1);
+										
+					//Here we compare the ranks to the frames to keep - if the rank is above 
+					//our number of frames to keep, i.e. worse ranked than our threshold, we 
+					//set the slice number to 0 in the array. This allows us to store only 
+					//the slice numbers of the slices we want to use
+					for (i1=0;i1<subSlices;i1++) {
+						//print(IMTArrayCutoffRank2[i1]);
+						//print(intDenDiff[i1]);
+						if (IMTArrayCutoffRank2[i1]<(IMTArrayCutoffRank2.length-lapFrames)) {
+							forLap[i1+(i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3])))] = 0;
+						}
+						//print(forLap[i1+(i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3])))]);
+					}
+
+					//Here we create a new array that stores the slice numbers for the 
+					//substack we're currently working with
+					currentStackSlices = Array.slice(forLap, ((i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3])))), (subSlices+((i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3]))))));
+				
+				} else {
+					
+					subSlices = iniTextValuesMicrons[4];
+					
+					//Here we create a new array that stores the slice numbers for the 
+					//substack we're currently working with
+					currentStackSlices = Array.slice(imageNumberArray, (i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3]))),  (subSlices+((i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3]))))));
+
+				}
+						
+				getAndProcessSlices(currentStackSlices, motionArtifactRemoval, k);
+
+				//If automatically selecting frames and we dont have a store of manually selected frames
+				if(manCorrect == false && File.exists(directories[1] + substring(imagesInput[i], 0, indexOf(imagesInput[i], ".tif")) + "/Slices To Use.csv")==0) {
+	
+					//Stick our average projected image in front of the ZT point to register then by translation (to minimize differences when comparing them)
+					//before then removing the average projection from the stack
+					run("Concatenate...", " title = wow image1=[T"+motionArtifactRemoval[2]+" Z"+motionArtifactRemoval[3]+"] image2=toKeep image3=[-- None --]");
+					if(false) {
+					run("MultiStackReg", "stack_1=[Untitled] action_1=Align file_1=[]  stack_2=None action_2=Ignore file_2=[] transformation=[Translation]");
+					}
+					selectWindow("Untitled");
+					run("Make Substack...", "delete slices=1");
+					selectWindow("Substack (1)");
+					rename("T"+motionArtifactRemoval[2]+" Z"+motionArtifactRemoval[3]);
+					selectWindow("Untitled");
+					rename("toKeep");
+
+					//Calculate the difference between the average projection and the stack
+					imageCalculator("Difference create stack", "toKeep", "T"+motionArtifactRemoval[2]+" Z"+motionArtifactRemoval[3]);
+				
+					//Measure the difference (mean grey value) for each slice - ideally all this code should be put into a function since it
+					//is a repeat of the laplacian frame selection from earlier
+					selectWindow("Result of toKeep");
+					keepSlices = nSlices;
+					diffArray = newArray(keepSlices);
+					for(currSlice = 1; currSlice < (keepSlices+1); currSlice++) {
+						setSlice(currSlice);
+						getRawStatistics(nPixels, mean, min, max, std, hist);
+						diffArray[currSlice-1]= mean;
+					}
+					selectWindow("Result of toKeep");
+					run("Close");
+					selectWindow("toKeep");
+					run("Close");
+					selectWindow("T"+motionArtifactRemoval[2]+" Z"+motionArtifactRemoval[3]);
+					run("Close");
+
+					//Here we rank the array twice, this is necessary to get the ranks of 
+					//the slices so that the highest sq diff value has the highest rank and 
+					//vice versa
+					IMTArrayCutoffRank1=Array.rankPositions(diffArray);
+					IMTArrayCutoffRank2=Array.rankPositions(IMTArrayCutoffRank1);
+										
+					//Here we compare the ranks to the frames to keep - if the rank is above 
+					//our number of frames to keep, i.e. worse ranked than our threshold, we 
+					//set the slice number to 0 in the array. This allows us to store only 
+					//the slice numbers of the slices we want to use
+					for (i1=0;i1<subSlices;i1++) {
+						if (IMTArrayCutoffRank2[i1]>(fToKeep-1)) {
+							imageNumberArray[i1+(i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3])))] = 0;
+						}
+					}
+		
+					//Here we create a new array that stores the slice numbers for the 
+					//substack we're currently working with
+					currentStackSlices = Array.slice(imageNumberArray, ((i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3])))), (subSlices+((i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3]))))));
+	
+					getAndProcessSlices(currentStackSlices, motionArtifactRemoval, k);
+
+				}
+		
+				//At the slice index, add a string of the image number, and its t and z 
+				//labels to the imagesToCombineCutoff array - this is in the format 
+				//needed to be used with the image concatenator as we will be 
+				//concatenating our Z slices together
+				imagesToCombineCutoff[motionArtifactRemoval[1]]="image"+(motionArtifactRemoval[1]+1)+"=[T"+motionArtifactRemoval[2]+" Z"+motionArtifactRemoval[3]+"] ";
+		
+				//Increase the zSlice number
+				motionArtifactRemoval[1]++;
+	
+				//If we've reached the end of our timepoint (as microglia morphology is 
+				//only done on a single timepoint, this just means we've hit the end of 
+				//the unique z positions in our stack), we concatenate them all together 
+				//to get a single timepoint
+				if(motionArtifactRemoval[1]==iniTextValuesMicrons[3]) {
+							
+					//This strung loop strings together the names stored in the 
+					//arrayDuring into a format that can be used to concatenate only the 
+					//selected open images
+					strung="";
+					for (i1=0; i1<imagesToCombineCutoff.length; i1++) {
+						strung +=  imagesToCombineCutoff[i1];
+					}	
+		
+					//Here we concatenate all the images we're keeping and rename it 
+					//according to the timepoint label stored in motionArtifactRemoval
+					run("Concatenate...", "title=[T"+motionArtifactRemoval[2]+"] "+strung+"");
+		
+					//Reorder the image in Z just to make sure everything lines up, before 
+					//registering it
+
+					selectWindow("T"+motionArtifactRemoval[2]);
+					run("8-bit");
+					print("Reordering and registering T", motionArtifactRemoval[2]);
+					if(false) {
+					run("MultiStackReg", "stack_1=[T"+motionArtifactRemoval[2]+"] action_1=Align file_1=[] stack_2=None action_2=Ignore file_2[] transformation=[Translation]");
+					}
+					selectWindow("T"+motionArtifactRemoval[2]);
+					run("8-bit");
+					zSpaceCorrection("T"+motionArtifactRemoval[2], (iniTextValuesMicrons[3]*5), "T"+motionArtifactRemoval[2]);
+					selectWindow("T"+motionArtifactRemoval[2]);
+					run("8-bit");
+					if(false) {
+					run("MultiStackReg", "stack_1=[T"+motionArtifactRemoval[2]+"] action_1=Align file_1=[] stack_2=None action_2=Ignore file_2[] transformation=[Affine]");
+					}
+					selectWindow("T"+motionArtifactRemoval[2]);
+					run("8-bit");
+					print("Done");
+									
+					//If we're only keeping a single frame (which means we won't have 
+					//average projected our image earlier function) then we median blur 
+					//our image 
+					if(fToKeep==1) {
+						selectWindow("T"+motionArtifactRemoval[2]);
+						run("Median 3D...", "x=1 y=1 z=1");
+					}
+	
+					timepointNamesCutoff[k] = "T"+motionArtifactRemoval[2];
+			
+				}
+
+			}
+
+			selectWindow("Timepoint");
+			run("Close");
+	
+			motionArtifactRemoval[0]++;
+			
+		}
+	
+		//Close the original input image and concatenate all the registered timepoint images
+		selectWindow(imagesInput[i]);
+		run("Close");
+
+		selectWindow(timepointNamesCutoff[(timepoints-1)]);
+		run("Duplicate...", "duplicate");
+		rename(timepointNamesCutoff[(timepoints-1)] + "Mask");
+		setThreshold(1,255);
+		run("Convert to Mask", "method=Default background=Dark");
+			
+		//Min project the mask showing all common pixels to get a single image that we turn into a selection, that we then impose on our concatenated stacks, turn into a proper square,
+		//and then create a new image from the concatenate stacks that should contain no blank space
+		selectWindow(timepointNamesCutoff[(timepoints-1)] + "Mask");
+		run("Z Project...", "projection=[Max Intensity]");
+		run("Create Selection");
+		run("To Bounding Box");
+		run("Duplicate...", "duplicate");
+		rename("dup");
+
+		selectWindow(timepointNamesCutoff[(timepoints-1)] + "Mask");
+		run("Close");
+		selectWindow(timepointNamesCutoff[(timepoints-1)]);
+		run("Close");
+
+		//As this isn't a timelapse experiment, we can close our original input 
+		//image and rename our registered timepoint as the input image
+		selectWindow("dup");
+		rename(imagesInput[i]);
+		run("Select None");
+		
+		//Here we check that the image is calibrated - if not we just recalibrate 
+		//using the iniTextValuesMicrons data
+		getPixelSize(unit, pixelWidth, pixelHeight);
+		if(unit!="um") {
+			selectWindow(imagesInput[i]);
+			getDimensions(width, height, channels, slices, frames);
+			run("Properties...", "channels="+channels+" slices="+slices+" frames="+frames+" unit=um pixel_width="+iniTextValuesMicrons[0]+" pixel_height="+iniTextValuesMicrons[1]+" voxel_depth="+iniTextValuesMicrons[2]+"");
+		}
+
+		//If we haven't made an output directory for our input image in the output 
+		//folder, we make it
+		if(File.exists(directories[1]+imageNames[3]+"/")==0) {
+			File.makeDirectory(directories[1]+imageNames[3]+"/");
+		}
+
+		selectWindow(imagesInput[i]);
+		saveAs("tiff", directories[1]+imageNames[3]+"/" + imageNames[3]+ " processed.tif");
+
+		wasMoved = File.rename(directories[0]+imagesInput[i], directories[2]+imagesInput[i]);
+		if(wasMoved == 0) {
+			print("Issue with moving image");
+			waitForUser("Issue with moving image");
+		}
+		
+	}
 
 Housekeeping();

@@ -494,6 +494,31 @@ function moveImageToInput(fileLocations, directories){
 
 }
 
+function retrieveExistingInfo(valuesToRecord, fileName, TableResultsAreStrings, inputsAreArrays) {
+	
+	open(fileName);
+	
+	//TableValues is an array we'll fill with the values from any existing cell position marking table for this image
+	analysisRecordInput = newArray(Table.size * valuesToRecord.length);
+
+	TableResultsRefs = newArray(valuesToRecord.length)
+				
+	//TableResultsRefs is an array of the location where we would find any previuosly existing table, repeated for each column
+	for(currCol = 0; currCol < valuesToRecord.length; currCol++){
+		TableResultsRefs[currCol] = fileName
+	}
+
+	//Run the fillArray function to fill analysisRecordInput
+	fillArray(analysisRecordInput, TableResultsRefs, valuesToRecord, TableResultsAreStrings, inputsAreArrays);
+
+	toClose = File.getNameWithoutExtension(fileName)
+	selectWindow(toClose);
+	run("Close");
+
+	return analysisRecordInput;
+
+}
+
 directories = getWorkingAndStorageDirectories();
 //[0] is input, [1] is output, [2] is done
 
@@ -527,34 +552,25 @@ imagesInput = getFileList(directories[0]);
 
 Housekeeping();
 
+fileName = directories[1] +  "Images to Use.csv"
+
 //Check to retrieve information about any images that have already been processed
 //If this file exists, get the info out
 ArrayConc = newArray(1);
-if(File.exists(directories[1] + "Images to Use.csv") == 1) {
+if(File.exists(fileName) == 1) {
 
 	//An array storing the column names that we'll use in our results file
 	valuesToRecord = newArray("Image List", "Kept", "Manual Flag", "Ignore");
-	
-	open(directories[1] + "Images to Use.csv");
-	
-	//TableValues is an array we'll fill with the values from any existing cell position marking table for this image
-	analysisRecordInput = newArray(Table.size * valuesToRecord.length);
-				
-	//TableResultsRefs is an array of the location where we would find any previuosly existing table, repeated for each column
-	TableResultsRefs = newArray(directories[1] + "Images to Use.csv", directories[1] + "Images to Use.csv", 
-		directories[1] + "Images to Use.csv", directories[1] + "Images to Use.csv");
-					
+
 	//This tells the function whether the results we're getting are strings
 	TableResultsAreStrings = newArray(true, false, false, false);
-					
-	//Run the fillArray function to fill analysisRecordInput
-	fillArray(analysisRecordInput, TableResultsRefs, valuesToRecord, TableResultsAreStrings, true);
+	
+	analysisRecordInput = retrieveExistingInfo(valuesToRecord, fileName, TableResultsAreStrings, true);
 
-	selectWindow("Images to Use.csv");
-	run("Close");
-
+	toMake = File.getNameWithoutExtension(fileName);
+	
 	//Create a results table to fill with previous data if it exists
-	Table.create("Images to Use");
+	Table.create(toMake);
 	
 	//File the table with previous data
 	for(i0=0; i0<(analysisRecordInput.length / valuesToRecord.length); i0++) {

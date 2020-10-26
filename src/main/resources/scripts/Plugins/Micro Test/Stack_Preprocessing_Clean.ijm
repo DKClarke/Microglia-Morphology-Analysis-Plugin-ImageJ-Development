@@ -575,6 +575,36 @@ function getManualFlaggedImages(tableName) {
 
 }
 
+function getManualFlaggedImagesWrapper(directories) {
+
+	imagesToUseFile = directories[1] +  "Images to Use.csv"
+	//Check to retrieve information about any images that have already been processed
+	//If this file exists, get the info out
+	if(File.exists(imagesToUseFile) == 1) {
+
+		//An array storing the column names that we'll use in our results file
+		valuesToRecord = newArray("Image List", "Kept", "Manual Flag", "Ignore");
+
+		//This tells the function whether the results we're getting are strings
+		TableResultsAreStrings = newArray(true, false, false, false);
+		
+		inputsAreArrays = true;
+
+		analysisRecordInput = retrieveExistingInfo(valuesToRecord, imagesToUseFile, TableResultsAreStrings, inputsAreArrays);
+
+		tableName = fillWithExistingInfo(imagesToUseFile, analysisRecordInput, valuesToRecord)
+
+		ArrayConc = getManualFlaggedImages(tableName);
+		
+	} else {
+		
+		ArrayConc = newArray(1);
+	}
+
+	return ArrayConc;
+
+}
+
 
 function openAndGetInfo(toOpen, directoryName) {
 
@@ -789,6 +819,17 @@ function manualFrameSelection(directories, ArrayConc, directoryName, iniTextValu
 
 }
 
+function manualFrameSelectionWrapper(manCorrect, frameSelect, directories, ArrayConc, directoryName, iniTextValuesMicrons) {
+//If the user wants to manually process images and the user chose to select frames
+	
+	if(manCorrect == true && frameSelect == true) {
+			
+			manualFrameSelection(directories, ArrayConc, directoryName, iniTextValuesMicrons);
+
+	}
+
+}
+
 directories = getWorkingAndStorageDirectories();
 //[0] is input, [1] is output, [2] is done
 
@@ -822,37 +863,9 @@ imagesInput = getFileList(directories[0]);
 
 Housekeeping();
 
-imagesToUseFile = directories[1] +  "Images to Use.csv"
+ArrayConc = getManualFlaggedImagesWrapper(directories);
 
-//Check to retrieve information about any images that have already been processed
-//If this file exists, get the info out
-if(File.exists(imagesToUseFile) == 1) {
-
-	//An array storing the column names that we'll use in our results file
-	valuesToRecord = newArray("Image List", "Kept", "Manual Flag", "Ignore");
-
-	//This tells the function whether the results we're getting are strings
-	TableResultsAreStrings = newArray(true, false, false, false);
-	
-	inputsAreArrays = true;
-
-	analysisRecordInput = retrieveExistingInfo(valuesToRecord, imagesToUseFile, TableResultsAreStrings, inputsAreArrays);
-
-	tableName = fillWithExistingInfo(imagesToUseFile, analysisRecordInput, valuesToRecord)
-
-	ArrayConc = getManualFlaggedImages(tableName);
-	
-} else {
-	
-	ArrayConc = newArray(1);
-}
-
-//If the user wants to manually process images and the user chose to select frames
-if(manCorrect == true && frameSelect == true) {
-		
-		manualFrameSelection(directories, ArrayConc, directoryName, iniTextValuesMicrons);
-
-}
+manualFrameSelectionWrapper(manCorrect, frameSelect, directories, ArrayConc, directoryName, iniTextValuesMicrons);
 
 //If we're going to frame process our manually selected frames, or we're not manually processing motion issues
 if(manCorrect == false || manCorrect == true && frameProcess == true ) {

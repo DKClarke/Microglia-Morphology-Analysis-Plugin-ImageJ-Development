@@ -519,6 +519,276 @@ function retrieveExistingInfo(valuesToRecord, fileName, TableResultsAreStrings, 
 
 }
 
+function fillWithExistingInfo(fileName, analysisRecordInput, valuesToRecord) {
+
+	toMake = File.getNameWithoutExtension(fileName);
+
+	//Create a results table to fill with previous data if it exists
+	Table.create(toMake);
+	
+	//File the table with previous data
+	for(i0=0; i0<(analysisRecordInput.length / valuesToRecord.length); i0++) {
+		for(i1=0; i1<valuesToRecord.length; i1++) {
+			if(i1 == 0) {
+				stringValue = analysisRecordInput[((analysisRecordInput.length / valuesToRecord.length)*i1)+i0];
+				Table.set(valuesToRecord[i1], i0, stringValue);
+			}
+			Table.set(valuesToRecord[i1], i0, analysisRecordInput[((analysisRecordInput.length / valuesToRecord.length)*i1)+i0]);
+		}
+	}
+	Table.update;
+
+	return toMake;
+
+}
+
+function getManualFlaggedImages(tableName) {
+
+	selectWindow(tableName);
+
+	//If an image has a manual flag or is set to be ignored, 
+	//flag it's image List values with a 0 
+	manualFlag = Table.getColumn("Manual Flag");
+	imageName = Table.getColumn("Image List");
+	ignoreFlag = Table.getColumn("Ignore");
+	for(currImage = 0; currImage<manualFlag.length; currImage++) {
+		if(manualFlag[currImage]==0 || ignoreFlag[currImage] == 1) {
+			imageName[currImage] = 0;
+		}
+	}
+	forStorage = removeZeros(imageName);
+
+	//Get the file name of the manually flagged images
+	if(forStorage.length != 0) {
+		ArrayConc = Array.copy(forStorage);
+		for(currImage = 0; currImage<forStorage.length; currImage++) {
+			ArrayConc[currImage] = File.getName(forStorage[currImage]);
+		}
+	} else {
+		ArrayConc = newArray(1);
+	}
+
+	selectWindow(tableName);
+	run("Close");
+
+	return ArrayConc;
+
+}
+
+
+function openAndGetInfo(toOpen, directoryName) {
+
+    open(toOpen);
+            
+    //Get out the animal name info - animal and 
+    //timepoint that we store at index [0] in the array, the timepoint only at [1]
+    //the animal only at [2] and finally the file name without the .tif on the end
+    //that we store at [3]
+    imageNames = newArray(4);
+    getAnimalTimepointInfo(imageNames, toOpen);
+    print("Preprocessing ", imageNames[0]); 
+    print(File.getNameWithoutExtension(toOpen) + " opened");
+        
+    print("Preprocessing ", imageNames[0]); 
+
+    //Array to store the values we need to calibrate our image with
+    iniTextValuesMicrons = newArray(5);
+    //Index 0 is xPxlSz, then yPxlSz, zPxlSz, ZperT, FperZ
+
+    getIniData(directoryName, iniTextValuesMicrons);
+
+    //Calculate the number of timepoints in the image, and also a value framesReorder that we pass in 
+    //to reorganise our slices as we want
+    timepoints = (iniTextValuesMicrons[3] * iniTextValuesMicrons[4])/nSlices;
+    framesReorder = (iniTextValuesMicrons[3] * iniTextValuesMicrons[4])/timepoints;
+
+    //Convert the image to 8-bit, then adjust the contrast across all slices 
+    //to normalise brightness to that of the top slice in the image
+    selectWindow(windowName);
+    print("Converting to 8-bit");
+    run("8-bit");
+
+    outputArray = newArray(timepoints, framesReorder);
+
+    return outputArray;
+
+}
+
+function formatDimensions(iniTextValuesMicrons, toOpen, outputArray) {
+
+    //This makes an array with a sequence 0,1,2...slices
+    imageNumberArray = Array.getSequence((iniTextValuesMicrons[3] * iniTextValuesMicrons[4])+1); 
+
+    //This array is used in motion artifact removal to store the image numbers 
+    //being processed that contains 1,2,3...slices
+    imageNumberArray = Array.slice(imageNumberArray, 1, imageNumberArray.length); 
+
+    windowName = File.getName(toOpen);
+
+    selectWindow(windowName);
+
+    //Here we reorder our input image so that the slices are in the right structure for motion artefact removal
+    run("Stack to Hyperstack...", "order=xyczt(default) channels=1 slices="+outputArray[0]+" frames="+outputArray[1]+" display=Color");
+    run("Hyperstack to Stack");
+    run("Stack to Hyperstack...", "order=xyczt(default) channels=1 slices="+outputArray[1]+" frames="+outputArray[0]+" display=Color");
+
+    return imageNumberArray;
+
+}
+
+function makeCurrentSubstack(iniTextValuesMicrons, i0) {
+
+    	//Here we create substacks from our input image - one substack 
+        //corresponding to all the frames at one Z point
+        subName="Substack ("+((iniTextValuesMicrons[4]*i0)+1)+"-"+ (iniTextValuesMicrons[4]*(i0+1))+")";
+        selectWindow("Timepoint");
+        slicesInTimepoint = nSlices;
+        print(slicesInTimepoint);
+        print(((iniTextValuesMicrons[4]*i0)+1)+"-"+ (iniTextValuesMicrons[4]*(i0+1)));
+        run("Make Substack...", " slices="+((iniTextValuesMicrons[4]*i0)+1)+"-"+(iniTextValuesMicrons[4]*(i0+1))+"");
+        rename(subName);
+
+        return subName;
+
+}
+
+function selectFrames(fToKeep, subName) {
+    
+    selectWindow(subName);
+    subSlices = nSlices;
+	
+    //Create an array to store which of the current substack slices we're keeping - fill with zeros
+    slicesKeeping = newArray(subSlices);
+    slicesKeeping = Array.fill(slicesKeeping, 0);
+
+    setOption("AutoContrast", true);
+
+    //Looping through the number of frames the user selected to keep, ask the user to
+    //scroll to a frame to retain, the index of this frame in slicesKeeping is then set to 1
+    for(currFrame=0; currFrame < fToKeep; currFrame++) {
+            
+        setBatchMode("Exit and Display");
+        run("Tile");
+        selectWindow(subName);
+        waitForUser("Scroll onto the frame to retain on the image labelled 'Substack etc'");
+        setBatchMode(true);
+        keptSlice = getSliceNumber();
+        print("Slice selected: ", keptSlice);
+        print("If selecting more, select a different one");
+
+        //keptSlice = 6;
+
+        slicesKeeping[(keptSlice-1)] = 1;
+            
+    }
+
+    setOption("AutoContrast", false);
+
+    return slicesKeeping;
+}
+
+function setUnwantedToZero(i0, k, iniTextValuesMicrons, imageNumberArray, slicesKeeping) {
+
+    //Close the image
+    selectWindow(subName);
+    subSlices = nSlices;
+    run("Close");
+
+    //If the user is keeping a particular frame, we retain that number in our imageNumberArray, else
+    //we set it to zero
+    for (i1=0;i1<subSlices;i1++) {
+        if(slicesKeeping[i1] == 0) {
+            imageNumberArray[i1+(i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3])))] = 0;
+        }
+    }
+
+    return imageNumberArray;
+
+}
+
+function manualSelectFramesPerTimepoint(toOpen, k, iniTextValuesMicrons, imageNumberArray) {
+    
+    selectWindow(File.getName(toOpen);
+    //Get out the current timepoint, split it into a stack for each frame (i.e. 14 stacks of 26 slices)
+    run("Duplicate...", "duplicate frames="+(k+1)+"");	
+    rename("Timepoint");
+
+    //Loop through all Z points in our image
+    for(i0=0; i0<(iniTextValuesMicrons[3]); i0++) {
+
+        subName = makeCurrentSubstack(iniTextValuesMicrons, i0);
+
+        slicesKeeping = selectFrames(fToKeep, subName);
+                
+        imageNumberArray =  setUnwantedToZero(i0, k, iniTextValuesMicrons, imageNumberArray, slicesKeeping);
+
+    }
+
+    selectWindow("Timepoint");
+    run("Close");
+
+    return imageNumberArray;
+
+}
+
+function manualFrameSelection(directories, ArrayConc, directoryName, iniTextValuesMicrons) {
+
+	//Loop through the files in the manually flagged images array
+	for(i=0; i<ArrayConc.length; i++) {
+
+        slicesToUseFile = directories[1] + ArrayConc[i] + "/Slices To Use.csv";
+        toOpen = directories[0] + ArrayConc[i] + ".tif";
+            
+        //If we haven't already selected frames for the current image and it is in our input folder
+        if(File.exists(slicesToUseFile)==0 && File.exists(toOpen)==1) {
+
+            print("Manually selecting frames");
+                    
+            outputArray = openAndGetInfo(toOpen, directoryName)
+            //[0] is timepoints, [1] is framesReorder
+            timepoints = outputArray[0];
+
+            imageNumberArray = formatDimensions(iniTextValuesMicrons, toOpen, outputArray)
+
+            //Reorder each individual timepoint stack in Z so that any out of position slices are positioned correctly for motion artifact detection and removal
+            //Go through each timepoint
+            for(k=0; k<timepoints; k++) {	
+
+                imageNumberArray = manualSelectFramesPerTimepoint(toOpen, k, iniTextValuesMicrons, imageNumberArray);
+
+            }
+
+            tableName = File.getNameWithoutExtension(slicesToUseFile);
+
+            //Save our array in a csv file so we can read this in later
+            Table.create(tableName);
+            selectWindow(tableName);
+            Table.setColumn("Slices", imageNumberArray);
+
+            //If the output directory for the input image hasn't already been made, make it
+            if(File.exists(directories[1] + ArrayConc[i]+"/") == 0) {
+                File.makeDirectory(directories[1]+ArrayConc[i] +"/");
+            }
+
+            Table.save(slicesToUseFile);
+            actualTableName = Table.title;
+            
+            //Since we save it every time, we have to rename it to get rid of the .csv 
+            if(actualTableName != tableName) {
+                Table.rename(actualTableName,tableName);
+            }
+                
+            selectWindow(tableName);
+            run("Close");
+
+            Housekeeping();
+
+        }	
+
+    } 
+
+}
+
 directories = getWorkingAndStorageDirectories();
 //[0] is input, [1] is output, [2] is done
 
@@ -552,12 +822,11 @@ imagesInput = getFileList(directories[0]);
 
 Housekeeping();
 
-fileName = directories[1] +  "Images to Use.csv"
+imagesToUseFile = directories[1] +  "Images to Use.csv"
 
 //Check to retrieve information about any images that have already been processed
 //If this file exists, get the info out
-ArrayConc = newArray(1);
-if(File.exists(fileName) == 1) {
+if(File.exists(imagesToUseFile) == 1) {
 
 	//An array storing the column names that we'll use in our results file
 	valuesToRecord = newArray("Image List", "Kept", "Manual Flag", "Ignore");
@@ -565,190 +834,24 @@ if(File.exists(fileName) == 1) {
 	//This tells the function whether the results we're getting are strings
 	TableResultsAreStrings = newArray(true, false, false, false);
 	
-	analysisRecordInput = retrieveExistingInfo(valuesToRecord, fileName, TableResultsAreStrings, true);
+	inputsAreArrays = true;
 
-	toMake = File.getNameWithoutExtension(fileName);
+	analysisRecordInput = retrieveExistingInfo(valuesToRecord, imagesToUseFile, TableResultsAreStrings, inputsAreArrays);
+
+	tableName = fillWithExistingInfo(imagesToUseFile, analysisRecordInput, valuesToRecord)
+
+	ArrayConc = getManualFlaggedImages(tableName);
 	
-	//Create a results table to fill with previous data if it exists
-	Table.create(toMake);
+} else {
 	
-	//File the table with previous data
-	for(i0=0; i0<(analysisRecordInput.length / valuesToRecord.length); i0++) {
-		for(i1=0; i1<valuesToRecord.length; i1++) {
-			if(i1 == 0) {
-				stringValue = analysisRecordInput[((analysisRecordInput.length / valuesToRecord.length)*i1)+i0];
-				Table.set(valuesToRecord[i1], i0, stringValue);
-			}
-			Table.set(valuesToRecord[i1], i0, analysisRecordInput[((analysisRecordInput.length / valuesToRecord.length)*i1)+i0]);
-		}
-	}
-	Table.update;
-	setBatchMode("Exit and Display");
-	waitForUser("Check table is correctly populated");
-
-	//If an image has a manual flag, get out a list of these
-	manualFlag = Table.getColumn("Manual Flag");
-	imageName = Table.getColumn("Image List");
-	ignoreFlag = Table.getColumn("Ignore");
-	for(currImage = 0; currImage<manualFlag.length; currImage++) {
-		if(manualFlag[currImage]==0 || ignoreFlag[currImage] == 1) {
-			imageName[currImage] = 0;
-		}
-	}
-	forStorage = removeZeros(imageName);
-
-	//Get the file name of the manually flagged images
-	if(forStorage.length != 0) {
-		ArrayConc = Array.copy(forStorage);
-		for(currImage = 0; currImage<forStorage.length; currImage++) {
-			ArrayConc[currImage] = File.getName(forStorage[currImage]);
-		}
-	}
-
-	selectWindow("Images to Use");
-	run("Close");
-	
+	ArrayConc = newArray(1);
 }
 
 //If the user wants to manually process images and the user chose to select frames
 if(manCorrect == true && frameSelect == true) {
-	
-	//Loop through the files in the manually flagged images array
-	for(i=0; i<ArrayConc.length; i++) {
-		//If we haven't already selected frames for the current image and it is in our input folder
-		if(File.exists(directories[1] + ArrayConc[i] + "/Slices To Use.csv")==0 && File.exists(directories[0] + ArrayConc[i] + ".tif")==1) {
-
-			print("Manually selecting frames");
-			forInfo = ArrayConc[i] + ".tif";
-					
-			//Get out the animal name info - animal and 
-			//timepoint that we store at index [0] in the array, the timepoint only at [1]
-			//the animal only at [2] and finally the file name without the .tif on the end
-			//that we store at [3]
-			imageNames = newArray(4);
-			getAnimalTimepointInfo(imageNames, forInfo);
-			open(directories[0] + forInfo);
-				
-			print("Preprocessing ", imageNames[0]); 
-
-			//Array to store the values we need to calibrate our image with
-			iniTextValuesMicrons = newArray(5);
-			//Index 0 is xPxlSz, then yPxlSz, zPxlSz, ZperT, FperZ
-
-			getIniData(directoryName, iniTextValuesMicrons);
-
-			//Calculate the number of timepoints in the image, and also a value framesReorder that we pass in 
-			//to reorganise our slices as we want
-			timepoints = (iniTextValuesMicrons[3] * iniTextValuesMicrons[4])/nSlices;
-			framesReorder = (iniTextValuesMicrons[3] * iniTextValuesMicrons[4])/timepoints;
-	
-			//This makes an array with a sequence 0,1,2...slices
-			imageNumberArray = Array.getSequence((iniTextValuesMicrons[3] * iniTextValuesMicrons[4])+1); 
-	
-			//This array is used in motion artifact removal to store the image numbers 
-			//being processed that contains 1,2,3...slices
-			imageNumberArray = Array.slice(imageNumberArray, 1, imageNumberArray.length); 
-	
-			//Here we reorder our input image so that the slices are in the right structure for motion artefact removal
-			run("Stack to Hyperstack...", "order=xyczt(default) channels=1 slices="+timepoints+" frames="+framesReorder+" display=Color");
-			run("Hyperstack to Stack");
-			run("Stack to Hyperstack...", "order=xyczt(default) channels=1 slices="+framesReorder+" frames="+timepoints+" display=Color");
-	
-			//Reorder each individual timepoint stack in Z so that any out of position slices are positioned correctly for motion artifact detection and removal
-			//Go through each timepoint
-			for(k=0; k<timepoints; k++) {	
-	
-				selectWindow(forInfo);
-				//Get out the current timepoint, split it into a stack for each frame (i.e. 14 stacks of 26 slices)
-				run("Duplicate...", "duplicate frames="+(k+1)+"");
-				currentTimepoint=getTitle();	
-				rename("Timepoint");
-	
-				//Loop through all Z points in our image
-				for(i0=0; i0<(iniTextValuesMicrons[3]); i0++) {
-				
-					//Here we create substacks from our input image - one substack 
-					//corresponding to all the frames at one Z point
-					subName="Substack ("+((iniTextValuesMicrons[4]*i0)+1)+"-"+ (iniTextValuesMicrons[4]*(i0+1))+")";
-					selectWindow("Timepoint");
-					slicesInTimepoint = nSlices;
-					print(slicesInTimepoint);
-					print(((iniTextValuesMicrons[4]*i0)+1)+"-"+ (iniTextValuesMicrons[4]*(i0+1)));
-					run("Make Substack...", " slices="+((iniTextValuesMicrons[4]*i0)+1)+"-"+(iniTextValuesMicrons[4]*(i0+1))+"");
-					rename(subName);
-					subSlices=nSlices;
-	
-					//Create an array to store which of the current substack slices we're keeping - fill with zeros
-					slicesKeeping = newArray(subSlices);
-					slicesKeeping = Array.fill(slicesKeeping, 0);
-
-					setOption("AutoContrast", true);
-	
-					//Looping through the number of frames the user selected to keep, ask the user to
-					//scroll to a frame to retain, the index of this frame in slicesKeeping is then set to 1
-					for(currFrame=0; currFrame < fToKeep; currFrame++) {
-							
-						setBatchMode("Exit and Display");
-						run("Tile");
-						selectWindow(subName);
-						if(false) {
-						waitForUser("Scroll onto the frame to retain on the image labelled 'Substack etc'");
-						}
-						setBatchMode(true);
-						keptSlice = getSliceNumber();
-						print("Slice selected: ", keptSlice);
-						print("If selecting more, select a different one");
-	
-						//keptSlice = 6;
-	
-						slicesKeeping[(keptSlice-1)] = 1;
-							
-					}
-
-					setOption("AutoContrast", false);
 		
-					//Close the image
-					selectWindow(subName);
-					run("Close");
-							
-					//If the user is keeping a particular frame, we retain that number in our imageNumberArray, else
-					//we set it to zero
-					for (i1=0;i1<subSlices;i1++) {
-						if(slicesKeeping[i1] == 0) {
-							imageNumberArray[i1+(i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3])))] = 0;
-						}
-					}
-				}
+		manualFrameSelection(directories, ArrayConc, directoryName, iniTextValuesMicrons);
 
-				selectWindow("Timepoint");
-				run("Close");
-			}
-	
-			//Save our array in a csv file so we can read this in later
-			Table.create("Slices To Use");
-			selectWindow("Slices To Use");
-			Table.setColumn("Slices", imageNumberArray);
-	
-			//If the output directory for the input image hasn't already been made, make it
-			if(File.exists(directories[1] + ArrayConc[i]+"/") == 0) {
-				File.makeDirectory(directories[1]+ArrayConc[i] +"/");
-			}
-	
-			Table.save(directories[1] + ArrayConc[i] + "/Slices To Use.csv");
-			TableName = Table.title;
-			
-			//Since we save it every time, we have to rename it to get rid of the .csv 
-			if(TableName != "Slices To Use") {
-				Table.rename(TableName, "Slices To Use");
-			}
-				
-			selectWindow("Slices To Use");
-			run("Close");
-	
-			Housekeeping();
-
-		}	 
-	}
 }
 
 //If we're going to frame process our manually selected frames, or we're not manually processing motion issues
@@ -796,29 +899,12 @@ for(i=0; i<imagesInput.length; i++) {
 
 	if(proceed == true) {
 
-		open(directories[0] + imagesInput[i]);
-	
-		//Work out the animal and timepoint labels for the current image based on its name
-		imageNames = newArray(4);
-		getAnimalTimepointInfo(imageNames, imagesInput[i]);
-		print("Preprocessing ", imageNames[0]); 
-		print(imagesInput[i] + " opened");
+		toOpen = directories[0] + imagesInput[i];
 
-		//Array to store the values we need to calibrate our image with
-		iniTextValuesMicrons = newArray(5);
-		//Index 0 is xPxlSz, then yPxlSz, zPxlSz, ZperT, FperZ
-		
-		getIniData(directoryName, iniTextValuesMicrons);
-			
-		//Calculate the number of timepoints in the image
-		timepoints = (iniTextValuesMicrons[3] * iniTextValuesMicrons[4])/nSlices;
-		framesReorder = iniTextValuesMicrons[3]/timepoints;
+		outputArray =  openAndGetInfo(toOpen, directoryName);
+		timepoints = outputArray[0];
 
-		//Convert the image to 8-bit, then adjust the contrast across all slices 
-		//to normalise brightness to that of the top slice in the image
-		selectWindow(imagesInput[i]);
-		print("Converting to 8-bit");
-		run("8-bit");
+		windowName = File.getName(toOpen);
 		
 		if(false) {
 			print("Stack Contrast Adjusting");
@@ -888,8 +974,7 @@ for(i=0; i<imagesInput.length; i++) {
 			
 			//Get out the current timepoint, split it into a stack for each frame (i.e. 14 stacks of 26 slices)
 			run("Duplicate...", "duplicate frames="+(k+1)+"");
-			selectWindow(substring(imagesInput[i], 0, indexOf(imagesInput[i], ".tif")) + "-1.tif");
-			currentTimepoint=getTitle();	
+			selectWindow(substring(imagesInput[i], 0, indexOf(imagesInput[i], ".tif")) + "-1.tif");	
 			rename("Timepoint");
 				
 			slicesForZ = nSlices;

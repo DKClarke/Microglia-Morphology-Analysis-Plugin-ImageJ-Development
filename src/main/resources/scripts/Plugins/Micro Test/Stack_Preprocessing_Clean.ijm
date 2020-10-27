@@ -1,62 +1,71 @@
-//This function clears the results table if it exists, clears the roimanager, and closes 
-//all open images - useful for quickly clearing the workspace
-function Housekeeping() {
-	
-	if (isOpen("Results")) {
-		run("Clear Results");
+function readAndGetColumnValue(resultsTableRefs, resultsAreStrings, resultsTableColumns) {
+
+	//Check if our results table actually exists
+	if(File.exists(resultsTableRefs)==1) {
+		
+		//Open our results table then loop through the results, filling our 
+		//inputArray with the data depending on if its a string or not
+		open(resultsTableRefs);
+		tabName = Table.title;
+		selectWindow(tabName);
+
+		inputArray = newArray(Table.size);
+		
+		//Loop through the results table and fill the input array with the 
+		//information we want to get
+		for(i0=0; i0<Table.size; i0++) {
+			if(resultsAreStrings==false) {
+				inputArray[i0] = Table.get(resultsTableColumns, i0);
+			} else {
+				inputArray[i0] = Table.getString(resultsTableColumns, i0);
+			}
+		}
+		selectWindow(tabName);
+		Table.reset(tabName);
+		run("Clear Results");	
+
+		return inputArray;
+
+	} else {
+
+		print('Input table' + resultsTableRefs + ' doesn"t exist')
+		return newArray('fail');
+
 	}
-	if(roiManager("count")>0) {
-		roiManager("deselect");
-		roiManager("delete");
-	}
-	if(nImages>0) {
-		run("Close All");
-	}
+
 }
 
-//Function finds all files that contain "substring" in the path "directoryname" 
-//"fileLocations" is an array that is passed in to fill with paths that contain substring
-function listFilesAndFilesSubDirectories(directoryName, subString) {
+function readAndGetMultipleColumns(resultsTableRefs, resultsAreStrings, resultsTableColumns) {
 
-	//Get the list of files in the directory
-	listOfFiles = getFileList(directoryName);
+	count = 0;
+	storageArray = newArray('fail');
 
-	//an array to add onto our fileLocations array to extend it so we can keep adding to it
-	arrayToConcat = newArray(1);
-    fileLocations = newArray(1);
-
-	//Loop through the files in the file list
-	for (i=0; i<listOfFiles.length; i++) {
-
-		//Create a string of the full path name
-		fullPath = directoryName+listOfFiles[i];
+	//Then loopping through the different data we want to fill our inputArray 
+	//with
+	for(i=0; i<resultsTableRefs.length; i++) {
 		
-		//If the file we're checking is a file and not a directory and if it  contains the substring we're 
-		//interested in within its full path we check  against the absolute path of our file in lower case on both counts
-		if (File.isDirectory(fullPath)==0 && indexOf(toLowerCase(fullPath), toLowerCase(subString))>-1) {
-			
-			//We store the full path in the output fileLocations at the latest index 
-			//(end of the array) and add an extra bit onto the Array so we can keep filling it
-			fileLocations = Array.concat(fileLocations, arrayToConcat);
-			currentIndex=fileLocations.length-1;
-			fileLocations[currentIndex] = fullPath;
+		//We first clear results, then if our resultsTableRefs file exists, we 
+		//open it 
+		run("Clear Results");
 
-		//If the file we're checking is a directory, then we run the whole thing on that directory
-		} else if (File.isDirectory(fullPath)==1) {
+	    inputArray = readAndGetColumnValue(resultsTableRefs[i], resultsAreStrings[i], resultsTableColumns[i]);
 
-			//Create a new array to fill whilst we run on this directory and at the end add it onyo the fileLocations array 
-			tempArray = listFilesAndFilesSubDirectories(fullPath, subString);
-			fileLocations = Array.concat(fileLocations, tempArray);     
-			
+		if(inputArray[0] != 'fail') {
+
+			if(count == 0) {
+				storageArray = Array.copy(inputArray);
+			} else {
+				storageArray = Array.concat(storageArray, inputArray);
+			}
+
+			count = count + 1;
+
 		}
+
 	}
 
-	//Create a new array that we fill with all non zero values of fileLocations
-	output = removeZeros(fileLocations);
+	return storageArray;
 
-	//Then return the output array
-	return output;
-	
 }
 
 //This is a function used to fill an inputArray using data from a csv file 
@@ -69,7 +78,7 @@ function listFilesAndFilesSubDirectories(directoryName, subString) {
 //InputArray needs to be a multiple of resultsTableRefs.length since if we have 
 //multiple resultsTableRefs values, we need to store at least that many values 
 //in the inputArray
-function fillArray(inputArray, resultsTableRefs, resultsTableColumns, 
+function fillArray(resultsTableRefs, resultsTableColumns, 
 	resultsAreStrings, inputsAreArrays) {
 	
 	//Clear the results table, check if our results table to load exists
@@ -79,94 +88,20 @@ function fillArray(inputArray, resultsTableRefs, resultsTableColumns,
 	//true
 	if(inputsAreArrays == true) {
 
-		//The section of the inputArray that we want to dedicate to each results 
-		//value is calculated
-		sizePerSection = inputArray.length / resultsTableRefs.length;
-
-		//Then loopping through the different data we want to fill our inputArray 
-		//with
-		for(i=0; i<resultsTableRefs.length; i++) {
-			
-			//We first clear results, then if our resultsTableRefs file exists, we 
-			//open it 
-			run("Clear Results");
-			if(File.exists(resultsTableRefs[i])==1) {
-				open(resultsTableRefs[i]);
-				tabName = Table.title;
-				
-				//Looping through the section of our inputArray that we're filling
-				for(i0=0; i0<sizePerSection; i0++) {
-
-					//If our current results we're getting aren't a string and we are 
-					//still within the limits of the results table then we fill our 
-					//inputArray with the result associated with our resultsTableColumns
-					if(resultsAreStrings[i]==false && i0 < Table.size) {
-						inputArray[(i*sizePerSection)+i0] = Table.get(resultsTableColumns[i] 
-						                                              ,i0);
-
-					//Otherwise if it is a string then we use getResultString
-					} else if (i0<Table.size) {
-						inputArray[(i*sizePerSection)+i0] = 
-						getResultString(resultsTableColumns[i], i0);
-					
-					//Otherwise if we're past the size of our results table, we fill our 
-					//inputArray with a 0
-					} else {
-						inputArray[(i*sizePerSection)+i0] = 0;
-					}
-				}
-				selectWindow(tabName);
-				Table.reset(tabName);
-				run("Clear Results");
-			}
-			//Table.reset(File.getName(resultsTableRefs[i]));
-		}
+		inputArray =  readAndGetMultipleColumns(resultsTableRefs, resultsAreStrings, resultsTableColumns);
 
 	//If we're not getting multiple columns
 	} else {
 
-		//Check if our results table actually exists
-		if(File.exists(resultsTableRefs)==1) {
-			
-			//Open our results table then loop through the results, filling our 
-			//inputArray with the data depending on if its a string or not
-			open(resultsTableRefs);
-			tabName = Table.title;
-			
-			//Loop through the results table and fill the input array with the 
-			//information we want to get
-			for(i0=0; i0<Table.size; i0++) {
-				if(resultsAreStrings==false) {
-					inputArray[i0] = Table.get(resultsTableColumns, i0);
-				} else {
-					inputArray[i0] = Table.getString(resultsTableColumns, i0);
-				}
-			}
-			selectWindow(tabName);
-			Table.reset(tabName);
-			run("Clear Results");	
-		}
+		inputArray = readAndGetColumnValue(resultsTableRefs, resultsAreStrings, resultsTableColumns);
 		
 	}
+
+	return inputArray;
+
 }
 
-//"OutputArray" is an array in which we store the output of this function
-//InputName is a string file path of an image generated by this macro
-//Function cuts up the file path of the inputName into different segments that
-//contain different bits of info i.e. info about the animal and 
-//timepoint that we store at index [0] in the array, the timepoint only at [1]
-//the animal only at [2] and finally the file name without the .tif on the end that we store at [3]
-function getAnimalTimepointInfo(outputArray, inputName) {
-  outputArray[0] = File.getName(substring(inputName, 0, indexOf(inputName, " Microglia Morphology")));
-  outputArray[1] = toLowerCase(substring(outputArray[0], lastIndexOf(outputArray[0], " ")+1));
-  outputArray[2] = toLowerCase(substring(outputArray[0], 0, lastIndexOf(outputArray[0], " ")));
-  outputArray[3] = File.getName(substring(inputName, 0, indexOf(inputName, ".tif")));
-}
-
-//This is a function to retrieve the data from the ini file. The ini file contains calibration information for the 
-//entire experiment that we use to calibrate our images. iniFolder is the folder within which the ini file is located, 
-//and iniTextValuesMicrons is an array we pass into the function that we fill with calibration values before returning it
-function getIniData(iniFolder, iniTextValuesMicrons) {
+function findIniFile(iniFolder) {
 
 	//We get the list of files in the iniFolder
 	iniFileList = getFileList(iniFolder);
@@ -181,21 +116,23 @@ function getIniData(iniFolder, iniTextValuesMicrons) {
 			found = true;
 		}
 	}
+
 	if(found == false) {
 		print("No ini file found");
-		return;
+		return 'fail';
+	} else {
+		return iniToOpen;
 	}
-	
-	//This is an array with the strings that come just before the information we want to retrieve from the ini file.
-	iniTextStringsPre = newArray("x.pixel.sz = ", "y.pixel.sz = ", "z.spacing = ", "no.of.planes = ", "frames.per.plane = ");
-	
-	//This is an array of the length of characters in each iniTextStringsPre item, so we can look this far after the
-	//start of each item to find the numeric value
-	iniTextIndicesPreAdds = newArray(13, 13, 12, 15, 19);	
+
+}
+
+function parseIniValues(iniTextStringsPre, iniTextIndicesPreAdds, iniToOpen) {
 		
 	//We open the ini file as a string
 	iniText = File.openAsString(iniToOpen);	
-		
+	
+	iniTextValuesMicrons = newArray(iniTextStringsPre.length);
+
 	//Looping through the values we want to grab
 	for(i=0; i<iniTextStringsPre.length; i++) {
 
@@ -222,34 +159,31 @@ function getIniData(iniFolder, iniTextValuesMicrons) {
 		//Parse our values
 		iniTextValuesMicrons[i] = parseFloat(realString);
 	}
+
+	return iniTextValuesMicrons;
+
 }
 
-//This function takes an input array, and removes all the 0's in it, outputting 
-//it as the output array which must be passed in as an argument
-function removeZeros(inputArray) {
+//This is a function to retrieve the data from the ini file. The ini file contains calibration information for the 
+//entire experiment that we use to calibrate our images. iniFolder is the folder within which the ini file is located, 
+//and iniTextValuesMicrons is an array we pass into the function that we fill with calibration values before returning it	
+function getIniData(iniFolder, iniTextStringsPre) {
 
-	//Loop through the input array, if the value isn't a 0, we place that in our 
-	//output array (which should be of length 1) before then concatenating an 
-	//array of length 1 to it to add another location to store another non-zero 
-	//value from the input array
-	
-    output = newArray(1);
-	arrayToConcat = newArray(1);
-
-	for(i=0; i<inputArray.length; i++) {
-		if(inputArray[i]!=0) {
-			currentIndex=output.length-1;
-			output[currentIndex]=inputArray[i];
-			output = Array.concat(output, arrayToConcat);
-		}
+	iniToOpen = findIniFile(iniFolder);
+	if(iniToOpen == 'fail') {
+		return 'fail';
 	}
 
-	//If the final value of the output array is 0, we trim the array by one
-	if(output[output.length-1]==0) {
-		output = Array.trim(output, output.length-1);
+	//This is an array of the length of characters in each iniTextStringsPre item, so we can look this far after the
+	//start of each item to find the numeric value
+	iniTextIndicesPreAdds = newArray(iniTextStringsPre.length);
+	for(i = 0; i<iniTextStringsPre.length; i++) {
+		iniTextIndicesPreAdds[i] = lengthOf(iniTextStringsPre[i]);
 	}
 
-	return output;
+	iniTextValuesMicrons = parseIniValues(iniTextStringsPre, iniTextIndicesPreAdds, iniToOpen);
+		
+	return iniTextValuesMicrons;
 }
 
 //Part of motion processing, takes an array (currentStackSlices), removes zeros from it, then
@@ -393,13 +327,14 @@ function getWorkingAndStorageDirectories(){
     //working with within our morphology processing directory
     directories=newArray(MorphologyProcessing+"Input" + File.separator, 
                         MorphologyProcessing+"Output" + File.separator, 
-                        MorphologyProcessing+"Done" + File.separator);
-    //[0] is input, [1] is output, [2] is done
+                        MorphologyProcessing+"Done" + File.separator,
+						directoryName);
+    //[0] is input, [1] is output, [2] is done, [3] is directoryName
 
     return directories;
 }
 
-function makeWorkingDirectorySubfolders(directories) {
+function makeDirectories(directories) {
 
     //Here we make our working directories by looping through our folder names, 
     //concatenating them to our main parent directory
@@ -409,6 +344,22 @@ function makeWorkingDirectorySubfolders(directories) {
             File.makeDirectory(directories[i]);
         }	
     }
+}
+
+//This function clears the results table if it exists, clears the roimanager, and closes 
+//all open images - useful for quickly clearing the workspace
+function Housekeeping() {
+	
+	if (isOpen("Results")) {
+		run("Clear Results");
+	}
+	if(roiManager("count")>0) {
+		roiManager("deselect");
+		roiManager("delete");
+	}
+	if(nImages>0) {
+		run("Close All");
+	}
 }
 
 function getPreprocessingInputs() {
@@ -459,6 +410,79 @@ function getManualProcessingInputs(manCorrect) {
 
 }
 
+//This function takes an input array, and removes all the 0's in it, outputting 
+//it as the output array which must be passed in as an argument
+function removeZeros(inputArray) {
+
+	//Loop through the input array, if the value isn't a 0, we place that in our 
+	//output array (which should be of length 1) before then concatenating an 
+	//array of length 1 to it to add another location to store another non-zero 
+	//value from the input array
+	
+    output = newArray(1);
+	arrayToConcat = newArray(1);
+
+	for(i=0; i<inputArray.length; i++) {
+		if(inputArray[i]!=0) {
+			currentIndex=output.length-1;
+			output[currentIndex]=inputArray[i];
+			output = Array.concat(output, arrayToConcat);
+		}
+	}
+
+	//If the final value of the output array is 0, we trim the array by one
+	if(output[output.length-1]==0) {
+		output = Array.trim(output, output.length-1);
+	}
+
+	return output;
+}
+
+//Function finds all files that contain "substring" in the path "directoryname" 
+//"fileLocations" is an array that is passed in to fill with paths that contain substring
+function listFilesAndFilesSubDirectories(directoryName, subString) {
+
+	//Get the list of files in the directory
+	listOfFiles = getFileList(directoryName);
+
+	//an array to add onto our fileLocations array to extend it so we can keep adding to it
+	arrayToConcat = newArray(1);
+    fileLocations = newArray(1);
+
+	//Loop through the files in the file list
+	for (i=0; i<listOfFiles.length; i++) {
+
+		//Create a string of the full path name
+		fullPath = directoryName+listOfFiles[i];
+		
+		//If the file we're checking is a file and not a directory and if it  contains the substring we're 
+		//interested in within its full path we check  against the absolute path of our file in lower case on both counts
+		if (File.isDirectory(fullPath)==0 && indexOf(toLowerCase(fullPath), toLowerCase(subString))>-1) {
+			
+			//We store the full path in the output fileLocations at the latest index 
+			//(end of the array) and add an extra bit onto the Array so we can keep filling it
+			fileLocations = Array.concat(fileLocations, arrayToConcat);
+			currentIndex=fileLocations.length-1;
+			fileLocations[currentIndex] = fullPath;
+
+		//If the file we're checking is a directory, then we run the whole thing on that directory
+		} else if (File.isDirectory(fullPath)==1) {
+
+			//Create a new array to fill whilst we run on this directory and at the end add it onyo the fileLocations array 
+			tempArray = listFilesAndFilesSubDirectories(fullPath, subString);
+			fileLocations = Array.concat(fileLocations, tempArray);     
+			
+		}
+	}
+
+	//Create a new array that we fill with all non zero values of fileLocations
+	output = removeZeros(fileLocations);
+
+	//Then return the output array
+	return output;
+	
+}
+
 function moveImageToInput(fileLocations, directories){
 
     //Loop through all matching files
@@ -469,13 +493,14 @@ function moveImageToInput(fileLocations, directories){
         //parentArray for easier access where index [0] contains the whole string 
         //of image location, and each subsequent index is the parent directory of 
         //the previous index
-        parentArray=newArray(5);
+        parentArray=newArray(3);
         parentArray[0] = fileLocations[i];
-        for(i1=0; i1<4; i1++){
+        for(i1=0; i1<(newArray.length); i1++){
             parentArray[i1+1] = File.getParent(parentArray[i1]);
         }
-
-        
+		//[0] is the full path, [1] is the treatment name, [2] is the animal name,
+		//and [3] is the storage directory
+    
         //Here we create a name to save the image as based the names in the last 2
         //directories of our image location and we add " Microglia Morphology" on 
         //to the end of it
@@ -494,110 +519,40 @@ function moveImageToInput(fileLocations, directories){
 
 }
 
-function retrieveExistingInfo(valuesToRecord, fileName, TableResultsAreStrings, inputsAreArrays) {
-	
-	open(fileName);
-	
-	//TableValues is an array we'll fill with the values from any existing cell position marking table for this image
-	analysisRecordInput = newArray(Table.size * valuesToRecord.length);
+function getManualFlaggedImages(tableLocation) {
 
-	TableResultsRefs = newArray(valuesToRecord.length)
-				
-	//TableResultsRefs is an array of the location where we would find any previuosly existing table, repeated for each column
-	for(currCol = 0; currCol < valuesToRecord.length; currCol++){
-		TableResultsRefs[currCol] = fileName
-	}
+	if(File.exists(tableLocation)==1) {
 
-	//Run the fillArray function to fill analysisRecordInput
-	fillArray(analysisRecordInput, TableResultsRefs, valuesToRecord, TableResultsAreStrings, inputsAreArrays);
+		open(tableLocation);
+		tableName = Table.title;
+		selectWindow(tableName);
 
-	toClose = File.getNameWithoutExtension(fileName)
-	selectWindow(toClose);
-	run("Close");
-
-	return analysisRecordInput;
-
-}
-
-function fillWithExistingInfo(fileName, analysisRecordInput, valuesToRecord) {
-
-	toMake = File.getNameWithoutExtension(fileName);
-
-	//Create a results table to fill with previous data if it exists
-	Table.create(toMake);
-	
-	//File the table with previous data
-	for(i0=0; i0<(analysisRecordInput.length / valuesToRecord.length); i0++) {
-		for(i1=0; i1<valuesToRecord.length; i1++) {
-			if(i1 == 0) {
-				stringValue = analysisRecordInput[((analysisRecordInput.length / valuesToRecord.length)*i1)+i0];
-				Table.set(valuesToRecord[i1], i0, stringValue);
+		//If an image has a manual flag or is set to be ignored, 
+		//flag it's image List values with a 0 
+		manualFlag = Table.getColumn("Manual Flag");
+		imageName = Table.getColumn("Image List");
+		ignoreFlag = Table.getColumn("Ignore");
+		for(currImage = 0; currImage<manualFlag.length; currImage++) {
+			if(manualFlag[currImage]==0 || ignoreFlag[currImage] == 1) {
+				imageName[currImage] = 0;
 			}
-			Table.set(valuesToRecord[i1], i0, analysisRecordInput[((analysisRecordInput.length / valuesToRecord.length)*i1)+i0]);
 		}
-	}
-	Table.update;
+		forStorage = removeZeros(imageName);
 
-	return toMake;
-
-}
-
-function getManualFlaggedImages(tableName) {
-
-	selectWindow(tableName);
-
-	//If an image has a manual flag or is set to be ignored, 
-	//flag it's image List values with a 0 
-	manualFlag = Table.getColumn("Manual Flag");
-	imageName = Table.getColumn("Image List");
-	ignoreFlag = Table.getColumn("Ignore");
-	for(currImage = 0; currImage<manualFlag.length; currImage++) {
-		if(manualFlag[currImage]==0 || ignoreFlag[currImage] == 1) {
-			imageName[currImage] = 0;
+		//Get the file name of the manually flagged images
+		if(forStorage.length != 0) {
+			ArrayConc = Array.copy(forStorage);
+			for(currImage = 0; currImage<forStorage.length; currImage++) {
+				ArrayConc[currImage] = File.getName(forStorage[currImage]);
+			}
+		} else {
+			ArrayConc = newArray(1);
 		}
-	}
-	forStorage = removeZeros(imageName);
 
-	//Get the file name of the manually flagged images
-	if(forStorage.length != 0) {
-		ArrayConc = Array.copy(forStorage);
-		for(currImage = 0; currImage<forStorage.length; currImage++) {
-			ArrayConc[currImage] = File.getName(forStorage[currImage]);
-		}
+		selectWindow(tableName);
+		run("Close");
+
 	} else {
-		ArrayConc = newArray(1);
-	}
-
-	selectWindow(tableName);
-	run("Close");
-
-	return ArrayConc;
-
-}
-
-function getManualFlaggedImagesWrapper(directories) {
-
-	imagesToUseFile = directories[1] +  "Images to Use.csv"
-	//Check to retrieve information about any images that have already been processed
-	//If this file exists, get the info out
-	if(File.exists(imagesToUseFile) == 1) {
-
-		//An array storing the column names that we'll use in our results file
-		valuesToRecord = newArray("Image List", "Kept", "Manual Flag", "Ignore");
-
-		//This tells the function whether the results we're getting are strings
-		TableResultsAreStrings = newArray(true, false, false, false);
-		
-		inputsAreArrays = true;
-
-		analysisRecordInput = retrieveExistingInfo(valuesToRecord, imagesToUseFile, TableResultsAreStrings, inputsAreArrays);
-
-		tableName = fillWithExistingInfo(imagesToUseFile, analysisRecordInput, valuesToRecord)
-
-		ArrayConc = getManualFlaggedImages(tableName);
-		
-	} else {
-		
 		ArrayConc = newArray(1);
 	}
 
@@ -605,8 +560,26 @@ function getManualFlaggedImagesWrapper(directories) {
 
 }
 
+//"OutputArray" is an array in which we store the output of this function
+//InputName is a string file path of an image generated by this macro
+//Function cuts up the file path of the inputName into different segments that
+//contain different bits of info i.e. info about the animal and 
+//timepoint that we store at index [0] in the array, the timepoint only at [1]
+//the animal only at [2] and finally the file name without the .tif on the end that we store at [3]
+function getAnimalTimepointInfo(inputName) {
+  
+  outputArray = newArray(4);
+  
+  outputArray[0] = File.getName(substring(inputName, 0, indexOf(inputName, " Microglia Morphology")));
+  outputArray[1] = toLowerCase(substring(outputArray[0], lastIndexOf(outputArray[0], " ")+1));
+  outputArray[2] = toLowerCase(substring(outputArray[0], 0, lastIndexOf(outputArray[0], " ")));
+  outputArray[3] = File.getName(substring(inputName, 0, indexOf(inputName, ".tif")));
 
-function openAndGetInfo(toOpen, directoryName) {
+  return outputArray;
+
+}
+
+function openAndGetImageInfo(toOpen) {
 
     open(toOpen);
             
@@ -614,55 +587,74 @@ function openAndGetInfo(toOpen, directoryName) {
     //timepoint that we store at index [0] in the array, the timepoint only at [1]
     //the animal only at [2] and finally the file name without the .tif on the end
     //that we store at [3]
-    imageNames = newArray(4);
-    getAnimalTimepointInfo(imageNames, toOpen);
+    imageNames = getAnimalTimepointInfo(toOpen);
     print("Preprocessing ", imageNames[0]); 
     print(File.getNameWithoutExtension(toOpen) + " opened");
         
     print("Preprocessing ", imageNames[0]); 
 
-    //Array to store the values we need to calibrate our image with
-    iniTextValuesMicrons = newArray(5);
-    //Index 0 is xPxlSz, then yPxlSz, zPxlSz, ZperT, FperZ
+	//This is an array with the strings that come just before the information we want to retrieve from the ini file.
+	iniTextStringsPre = newArray("x.pixel.sz = ", "y.pixel.sz = ", "z.spacing = ", "no.of.planes = ", "frames.per.plane = ");
 
-    getIniData(directoryName, iniTextValuesMicrons);
+	//Array to store the values we need to calibrate our image with
+	iniTextValuesMicrons =  getIniData(iniFolder, iniTextStringsPre);
+	//Index 0 is xPxlSz, then yPxlSz, zPxlSz, ZperT, FperZ
 
     //Calculate the number of timepoints in the image, and also a value framesReorder that we pass in 
     //to reorganise our slices as we want
+	selectWindow(File.getName(toOpen));
     timepoints = (iniTextValuesMicrons[3] * iniTextValuesMicrons[4])/nSlices;
     framesReorder = (iniTextValuesMicrons[3] * iniTextValuesMicrons[4])/timepoints;
 
-    //Convert the image to 8-bit, then adjust the contrast across all slices 
-    //to normalise brightness to that of the top slice in the image
-    selectWindow(windowName);
-    print("Converting to 8-bit");
-    run("8-bit");
-
-    outputArray = newArray(timepoints, framesReorder);
+	outputArray = newArray(timepoints, framesReorder);
 
     return outputArray;
 
 }
 
-function formatDimensions(iniTextValuesMicrons, toOpen, outputArray) {
-
-    //This makes an array with a sequence 0,1,2...slices
-    imageNumberArray = Array.getSequence((iniTextValuesMicrons[3] * iniTextValuesMicrons[4])+1); 
-
-    //This array is used in motion artifact removal to store the image numbers 
-    //being processed that contains 1,2,3...slices
-    imageNumberArray = Array.slice(imageNumberArray, 1, imageNumberArray.length); 
-
-    windowName = File.getName(toOpen);
-
-    selectWindow(windowName);
+function formatManualSelectionImage(toOpen, timepoints, framesReorder) {
+   
+   //Convert the image to 8-bit, then adjust the contrast across all slices 
+    //to normalise brightness to that of the top slice in the image
+    selectWindow(File.getName(toOpen));
+    print("Converting to 8-bit");
+    run("8-bit");
 
     //Here we reorder our input image so that the slices are in the right structure for motion artefact removal
-    run("Stack to Hyperstack...", "order=xyczt(default) channels=1 slices="+outputArray[0]+" frames="+outputArray[1]+" display=Color");
+    run("Stack to Hyperstack...", "order=xyczt(default) channels=1 slices="+timepoints+" frames="+framesReorder+" display=Color");
     run("Hyperstack to Stack");
-    run("Stack to Hyperstack...", "order=xyczt(default) channels=1 slices="+outputArray[1]+" frames="+outputArray[0]+" display=Color");
+    run("Stack to Hyperstack...", "order=xyczt(default) channels=1 slices="+framesReorder+" frames="+timepoints+" display=Color");
+
+}
+
+function getArrayOfImageSliceNumbers(toOpen) {
+
+    //This makes an array with which is the length of the number of
+	//Z we have per timepoint times the number of frames per Z (i.e., every slice in the stack)
+	//We do this +1, then slice it, so that we get an array of the same length as our stack, starting
+	//at a value of 1
+	selectWindow(File.getName(toOpen));
+	slices = nSlices;
+    imageNumberArray = Array.getSequence(slices+1); 
+    imageNumberArray = Array.slice(imageNumberArray, 1, imageNumberArray.length); 
+
 
     return imageNumberArray;
+
+}
+
+function makeTableFromArray(tableName, inputArray, columnNames) {
+
+	//Create a results table to fill with previous data if it exists
+	Table.create(tableName);
+	
+	//File the table with previous data
+	for(i0=0; i0<(inputArray.length / columnNames.length); i0++) {
+		for(i1=0; i1<columnNames.length; i1++) {
+			Table.set(columnNames[i1], i0, inputArray[((inputArray.length / columnNames.length)*i1)+i0]);
+		}
+	}
+	Table.update;
 
 }
 
@@ -774,11 +766,17 @@ function manualFrameSelection(directories, ArrayConc, directoryName, iniTextValu
 
             print("Manually selecting frames");
                     
-            outputArray = openAndGetInfo(toOpen, directoryName)
+			//Open the image, get ini values, use to calculate the numbber of timepoints and values
+			//we need to format the stack for manual selection
+            outputArray = openAndGetInfo(toOpen);
             //[0] is timepoints, [1] is framesReorder
             timepoints = outputArray[0];
 
-            imageNumberArray = formatDimensions(iniTextValuesMicrons, toOpen, outputArray)
+			//Format the image for manual selection
+			formatManualSelectionImage(toOpen, outputArray[0], outputArray[1]);
+
+			//Get an array where each element represents a slice of the stack
+			imageNumberArray = getArrayOfImageSliceNumbers(toOpen);
 
             //Reorder each individual timepoint stack in Z so that any out of position slices are positioned correctly for motion artifact detection and removal
             //Go through each timepoint
@@ -830,40 +828,52 @@ function manualFrameSelectionWrapper(manCorrect, frameSelect, directories, Array
 
 }
 
+//Get user input into where our working directory, and image storage directories, reside
 directories = getWorkingAndStorageDirectories();
-//[0] is input, [1] is output, [2] is done
+//[0] is input, [1] is output, [2] is done (working directories) [3] is directoryName (storage directory)
+directoryName = directories[3];
 
-makeWorkingDirectorySubfolders();
+//Loop through our working directories and make them if they don't already exist
+makeDirectories(Array.slice(directories, 0, 3));
 
 //Here we set the macro into batch mode and run the housekeeping function which 
 //clears the roimanager, closes all open windows, and clears the results table
 setBatchMode(true);
 Housekeeping();
 
+//Ask the user for inputs on frames to keep, frames to use for the laplacian blur detector, whether to
+//manually correct frames, and the string to ID morphology images
 inputs_array = getPreprocessingInputs();
 fToKeep = inputs_array[0];
 lapFrames = inputs_array[1];
 manCorrect = inputs_array[2];
 preProcStringToFind = inputs_array[3];
 
+//If the user wants to manually process frames, get back whether they want to select frames to process,
+//process already selected frames, or both
 manChoices = getManualProcessingInputs(manCorrect);
 frameSelect = manChoices[0];
 frameProcess = manChoices[1];
 
 //Here we run the listFilesAndFilesSubDirectories function on our parent 2P 
-//raw data location looking for locations that are labelled with the user indicated string
+//raw data location looking for locations that are labelled with the user indicated string 
+//i.e. we find our morphology images
 fileLocations = listFilesAndFilesSubDirectories(directoryName, preProcStringToFind);
 
+//For each image in our image storage location, copy it into our input directory if it isn't already
+//in there (and isn't in the done folder either)
 moveImageToInput(fileLocations, directories);
 
 //Now we get out the list of files in our input folder 
-//once we've gone through all the microglia morphology images in our raw 2P 
-//data directory
+//once we've gone through all the microglia morphology images in our image storage directory
 imagesInput = getFileList(directories[0]);
 
 Housekeeping();
 
-ArrayConc = getManualFlaggedImagesWrapper(directories);
+//If we have an 'images to use' file in our output folder, get out the images to use from it and
+//store in Array Conc
+imagesToUseFile = directories[1] +  "Images to Use.csv"
+ArrayConc = getManualFlaggedImages(imagesToUseFile);
 
 manualFrameSelectionWrapper(manCorrect, frameSelect, directories, ArrayConc, directoryName, iniTextValuesMicrons);
 

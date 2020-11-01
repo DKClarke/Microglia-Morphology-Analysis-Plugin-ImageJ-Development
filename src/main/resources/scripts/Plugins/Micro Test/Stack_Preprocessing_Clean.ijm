@@ -674,7 +674,7 @@ function makeCurrentSubstack(iniTextValuesMicrons, i0) {
 
 }
 
-function selectFrames(fToKeep, subName) {
+function selectFramesManually(fToKeep, subName) {
     
     selectWindow(subName);
     subSlices = nSlices;
@@ -709,7 +709,7 @@ function selectFrames(fToKeep, subName) {
     return slicesKeeping;
 }
 
-function setUnwantedToZero(i0, k, iniTextValuesMicrons, imageNumberArray, slicesKeeping) {
+function removeRejectedFrames(i0, k, iniTextValuesMicrons, imageNumberArray, slicesKeeping, subName) {
 
     //Close the image
     selectWindow(subName);
@@ -728,61 +728,53 @@ function setUnwantedToZero(i0, k, iniTextValuesMicrons, imageNumberArray, slices
 
 }
 
-function manualSelectFramesPerTimepoint(toOpen, k, iniTextValuesMicrons, imageNumberArray) {
-    
-    selectWindow(File.getName(toOpen);
-    //Get out the current timepoint, split it into a stack for each frame (i.e. 14 stacks of 26 slices)
-    run("Duplicate...", "duplicate frames="+(k+1)+"");	
-    rename("Timepoint");
-
-    //Loop through all Z points in our image
-    for(i0=0; i0<(iniTextValuesMicrons[3]); i0++) {
-
-        subName = makeCurrentSubstack(iniTextValuesMicrons, i0);
-
-        slicesKeeping = selectFrames(fToKeep, subName);
-                
-        imageNumberArray =  setUnwantedToZero(i0, k, iniTextValuesMicrons, imageNumberArray, slicesKeeping);
-
-    }
-
-    selectWindow("Timepoint");
-    run("Close");
-
-    return imageNumberArray;
-
-}
-
-function manualFrameSelection(directories, ArrayConc, directoryName, iniTextValuesMicrons) {
+function manualFrameSelection(directories, imageList, directoryName, iniTextValuesMicrons) {
 
 	//Loop through the files in the manually flagged images array
-	for(i=0; i<ArrayConc.length; i++) {
+	for(i=0; i<imageList.length; i++) {
 
-        slicesToUseFile = directories[1] + ArrayConc[i] + "/Slices To Use.csv";
-        toOpen = directories[0] + ArrayConc[i] + ".tif";
-            
+		proceed = false;
+		//If we're doing manual processing and we don't have a list of slices to use for an 
+		//image, but it exists, proceed
+		if(manCorrect == true){
+			slicesToUseFile = directories[1] + imageList[i] + "/Slices To Use.csv";
+        	toOpen = directories[0] + imageList[i] + ".tif";
+			if(File.exists(slicesToUseFile)==0 && File.exists(toOpen)==1) {
+				proceed = true;	
+			}
+		//Else if we're doing automated frame selection, if the file exists in our 
+		//input folder, we proceed
+		} else if(File.exists(directories[0] + imagesInput[i])==1) {
+				proceed = true;
+		}	
+
         //If we haven't already selected frames for the current image and it is in our input folder
-        if(File.exists(slicesToUseFile)==0 && File.exists(toOpen)==1) {
+        if(proceed = true) {
 
             print("Manually selecting frames");
                     
 			//Open the image, get ini values, use to calculate the numbber of timepoints and values
 			//we need to format the stack for manual selection
-            outputArray = openAndGetInfo(toOpen);
+            outputArray = openAndGetImageInfo(toOpen);
             //[0] is timepoints, [1] is framesReorder
             timepoints = outputArray[0];
 
-			//Format the image for manual selection
-			formatManualSelectionImage(toOpen, outputArray[0], outputArray[1]);
+			// Change this to a function for preprocessing
+			if(manCorrect == false) {
+				//Stuff
+			} else {
+				//Format the image for manual selection
+				formatManualSelectionImage(toOpen, outputArray[0], outputArray[1]);
 
-			//Get an array where each element represents a slice of the stack
-			imageNumberArray = getArrayOfImageSliceNumbers(toOpen);
+				//Get an array where each element represents a slice of the stack
+				imageNumberArray = getArrayOfImageSliceNumbers(toOpen);
+			}
 
             //Reorder each individual timepoint stack in Z so that any out of position slices are positioned correctly for motion artifact detection and removal
             //Go through each timepoint
             for(k=0; k<timepoints; k++) {	
 
-                imageNumberArray = manualSelectFramesPerTimepoint(toOpen, k, iniTextValuesMicrons, imageNumberArray);
+                imageNumberArray = getFramesPerTimepoint(toOpen, k, iniTextValuesMicrons, imageNumberArray, manCorrect);
 
             }
 
@@ -794,8 +786,8 @@ function manualFrameSelection(directories, ArrayConc, directoryName, iniTextValu
             Table.setColumn("Slices", imageNumberArray);
 
             //If the output directory for the input image hasn't already been made, make it
-            if(File.exists(directories[1] + ArrayConc[i]+"/") == 0) {
-                File.makeDirectory(directories[1]+ArrayConc[i] +"/");
+            if(File.exists(directories[1] + imageList[i]+"/") == 0) {
+                File.makeDirectory(directories[1]+imageList[i] +"/");
             }
 
             Table.save(slicesToUseFile);
@@ -826,6 +818,134 @@ function manualFrameSelectionWrapper(manCorrect, frameSelect, directories, Array
 
 	}
 
+}
+
+function imagesToProcess(manCorrect, frameProcess, manualFlaggedImages, directories) {
+
+	//If we're going to frame process our manually selected frames, or we're not manually processing motion issues
+	if(manCorrect == false || manCorrect == true && frameProcess == true ) {
+
+		//If we want to process our manually selected frames, set the image array to the manually flagged images
+		if(manCorrect == true) {
+			imagesInput = manualFlaggedImages;
+			
+			for(currCheck = 0; currCheck < imagesInput.length; currCheck++) {
+				imagesInput[currCheck] = toString(imagesInput[currCheck]) + ".tif";
+			}
+
+		//Otherwise get a list of the images in the input folder before removing from this list any images
+		//that have been flagged for manual analysis i.e. images that haven't been registered before
+		} else {
+			imagesInput = getFileList(directories[0]);
+			for(currInput = 0; currInput < imagesInput.length; currInput++) {
+				noTif = substring(imagesInput[currInput], 0, indexOf(imagesInput[currInput], ".tif"));
+				for(currConc = 0; currConc < manualFlaggedImages.length; currConc++) {
+					if(ArrayConc[currConc] == noTif) {
+						imagesInput[currInput] = 0;
+						break;
+					}
+				}
+			}	
+			newImages = removeZeros(imagesInput);			
+			imagesInput = newImages;			
+		}
+
+		return imagesInput;
+	}
+
+}
+
+function automatedPreProcessing(imageTitle, timepoints, slicesToProcess){
+			
+	//Adjust the contrast in the stack to normalise it across all Z depths and
+	//timepoints
+	print("Stack Contrast Adjusting");
+	selectWindow(imageTitle);
+	setSlice(1);
+	run("Stack Contrast Adjustment", "is");
+	stackWindow = getTitle();
+	selectWindow(imageTitle);
+	run("Close");
+	selectWindow(stackWindow);
+	rename(imageTitle);
+	run("8-bit");
+
+	//Increase the canvas size of the image by 100 pixels in x and y so that 
+	//when we run registration on the image, if the image drifts we don't lose
+	//any of it over the edges of the canvas
+	getDimensions(width, height, channels, slices, frames);
+	run("Canvas Size...", "width="+(width+500)+" height="+(height+500)+" position=Center zero");
+
+	//save image back to source as this updated version
+
+	//Start motion artifact removal here
+	print("Starting motion artifact removal");
+
+	//This is an array we fill with the names of the processed timepoint stacks
+	timepointNamesCutoff = newArray(timepoints);
+
+}
+
+function retrieveSlicesToProcess(manCorrect, directories, imagesInput, slices){
+			
+	//If we're working with manually chosen frames, get them out as imageNumberArray, else
+	//generate imageNumberArray as all the slices in the image, and copy this to a forLap object
+	//which we use to select frames for our laplacian average - also, if we're not doing manual analysis but there exists a
+	//manually chosen frame table for our image, use that instead
+	if(manCorrect == true || manCorrect == false && File.exists(directories[1] +substring(imagesInput[i], 0, indexOf(imagesInput[i], ".tif")) + "/Slices To Use.csv")==1) {
+
+		open(directories[1] + substring(imagesInput[i], 0, indexOf(imagesInput[i], ".tif")) + "/Slices To Use.csv");
+		selectWindow("Slices To Use.csv");
+		imageNumberArray = Table.getColumn("Slices");
+		selectWindow("Slices To Use.csv");
+		run("Close");
+		
+	} else {
+
+		//This makes an array with a sequence 0,1,2...slices
+		imageNumberArray = Array.getSequence(slices+1); 
+
+		//This array is used in motion artifact removal to store the image numbers 
+		//being processed that contains 1,2,3...slices
+		imageNumberArray = Array.slice(imageNumberArray, 1, imageNumberArray.length); 
+		
+	}
+
+	return imageNumberArray;
+
+}
+
+function getLaplacianMax(intDenDiff){
+	
+	//As a way of detection blur in our imgaes, we use a laplacian of gaussian filter on our stack,
+	//https://www.pyimagesearch.com/2015/09/07/blur-detection-with-opencv/
+	//https://stackoverflow.com/questions/7765810/is-there-a-way-to-detect-if-an-image-is-blurry
+			
+	//We register our substack before running it through the laplacian filter
+	print("Registering and removing artifacts from", subName);
+	selectWindow(subName);
+	subSlices=nSlices;
+	run("FeatureJ Laplacian", "compute smoothing=1.0");
+
+	//Close our pre laplacian image and rename our laplacian filtered image
+	selectWindow(subName);
+	rename("toKeep");
+	selectWindow(subName + " Laplacian");
+	rename(subName);
+	imageSlices = nSlices;
+		
+	//For each slice in the stack, store the maximum pixel value of the laplacian filtered slice
+	for(currSlice = 1; currSlice < (imageSlices+1); currSlice++) {
+		setSlice(currSlice);
+		getRawStatistics(nPixels, mean, min, max, std, hist);
+		intDenDiff[((currSlice-1)+(i0*nSlices))] = max;
+	}
+
+	//Close the laplacian filtered image
+	selectWindow(subName);
+	run("Close");
+
+	return intDenDiff;
 }
 
 //Get user input into where our working directory, and image storage directories, reside
@@ -870,158 +990,140 @@ imagesInput = getFileList(directories[0]);
 
 Housekeeping();
 
-//If we have an 'images to use' file in our output folder, get out the images to use from it and
-//store in Array Conc
+//If we have an 'images to use' file in our output folder, get out the images that have been flaged
+//for manual frame selection
 imagesToUseFile = directories[1] +  "Images to Use.csv"
-ArrayConc = getManualFlaggedImages(imagesToUseFile);
+manualFlaggedImages = getManualFlaggedImages(imagesToUseFile);
 
-manualFrameSelectionWrapper(manCorrect, frameSelect, directories, ArrayConc, directoryName, iniTextValuesMicrons);
+//For our images that are flagged for manual frame selection, ask the user to identify which frames
+//to keep, then for each image, save this in a table in that images directory
+manualFrameSelectionWrapper(manCorrect, frameSelect, directories, manualFlaggedImages, directoryName, iniTextValuesMicrons);
 
-//If we're going to frame process our manually selected frames, or we're not manually processing motion issues
-if(manCorrect == false || manCorrect == true && frameProcess == true ) {
-
-	//If we want to process our manually selected frames, set the image array to the manually flagged images
-	if(manCorrect == true) {
-		imagesInput = ArrayConc;
-		
-		for(currCheck = 0; currCheck < imagesInput.length; currCheck++) {
-			imagesInput[currCheck] = toString(imagesInput[currCheck]) + ".tif";
-		}
-
-	//Otherwise get a list of the images in the input folder before removing from this list any images
-	//that have been flagged for manual analysis i.e. images that haven't been registered before
-	} else {
-		imagesInput = getFileList(directories[0]);
-		for(currInput = 0; currInput < imagesInput.length; currInput++) {
-			noTif = substring(imagesInput[currInput], 0, indexOf(imagesInput[currInput], ".tif"));
-			for(currConc = 0; currConc < ArrayConc.length; currConc++) {
-				if(ArrayConc[currConc] == noTif) {
-					imagesInput[currInput] = 0;
-					currConc = 1e99;
-				}
-			}
-		}	
-		newImages = removeZeros(imagesInput);			
-		imagesInput = newImages;			
-	}
-}
+//Get the list of images we're going to process - if we've selected to process manual images, these
+//are what we process, else we do non-manually flagged images
+imagesToProcessArray = imagesToProcess(manCorrect, frameProcess, manualFlaggedImages, directories);
 
 //Loop through the files in the input folder
-for(i=0; i<imagesInput.length; i++) {
+for(i=0; i<imagesToProcessArray.length; i++) {
 		
 	//If the file exists in our input folder, we proceed
 	proceed = false;
-	if(File.exists(directories[0] + imagesInput[i])==1) {
+	if(File.exists(directories[0] + imagesToProcessArray[i])==1) {
 		proceed = true;
 	}
 
 	//Though if we're doing manual correction and don't have a list of the frames to use, we don't proceed
-	if(manCorrect == true && File.exists(directories[1] + substring(imagesInput[i], 0, indexOf(imagesInput[i], ".tif")) + "/Slices To Use.csv")==0) {
+	if(manCorrect == true && File.exists(directories[1] + substring(imagesToProcessArray[i], 0, indexOf(imagesToProcessArray[i], ".tif")) + "/Slices To Use.csv")==0) {
 		proceed = false;
 	}
 
 	if(proceed == true) {
 
-		toOpen = directories[0] + imagesInput[i];
+		toOpen = directories[0] + imagesToProcessArray[i];
 
-		outputArray =  openAndGetInfo(toOpen, directoryName);
+		outputArray =  openAndGetImageInfo(toOpen, directoryName);
 		timepoints = outputArray[0];
 
 		windowName = File.getName(toOpen);
+
+		automatedPreProcessing(windowName, timepoints);
+		selectWindow(windowName);
+		slicesToPass = nSlices;
+
+		imageNumberArray = retrieveSlicesToProcess(manCorrect, directories, imagesToProcessArray, slicesToPass);
 		
-		if(false) {
-			print("Stack Contrast Adjusting");
-			selectWindow(imagesInput[i]);
-			setSlice(1);
-			run("Stack Contrast Adjustment", "is");
-			stackWindow = getTitle();
-			selectWindow(imagesInput[i]);
-			run("Close");
-			selectWindow(stackWindow);
-			rename(imagesInput[i]);
-			run("8-bit");
-		}
-
-		//Increase the canvas size of the image by 100 pixels in x and y so that 
-		//when we run registration on the image, if the image drifts we don't lose
-		//any of it over the edges of the canvas
-		getDimensions(width, height, channels, slices, frames);
-		run("Canvas Size...", "width="+(width+500)+" height="+(height+500)+" position=Center zero");
-
-		//Start motion artifact removal here
-		print("Starting motion artifact removal");
-
-		//This array stores information we need to refer to during motion artifact 
-		//removal - i.e. the current timepoint we're processing as well as the 
-		//current z position we're processing, and the timepoint and z position 
-		//labels we want to use (these are appended with 0's if necessary so that
-		//all timepoints and z positions have the same number of digits)
-		motionArtifactRemoval = newArray(0,0,0,0);
-		//[0] is tNumber, [1] is zSlice, [2] is tOut, [3] is zLabel
-
-		//This is an array we fill with the names of the processed timepoint stacks
-		timepointNamesCutoff = newArray(timepoints);
-
-		//If we're working with manually chosen frames, get them out as imageNumberArray, else
-		//generate imageNumberArray as all the slices in the image, and copy this to a forLap object
-		//which we use to select frames for our laplacian average - also, if we're not doing manual analysis but there exists a
-		//manually chosen frame table for our image, use that instead
 		if(manCorrect == true || manCorrect == false && File.exists(directories[1] +substring(imagesInput[i], 0, indexOf(imagesInput[i], ".tif")) + "/Slices To Use.csv")==1) {
-
-			open(directories[1] + substring(imagesInput[i], 0, indexOf(imagesInput[i], ".tif")) + "/Slices To Use.csv");
-			selectWindow("Slices To Use.csv");
-			imageNumberArray = Table.getColumn("Slices");
-			selectWindow("Slices To Use.csv");
-			run("Close");
-			
-		} else {
-
-			//This makes an array with a sequence 0,1,2...slices
-			imageNumberArray = Array.getSequence(nSlices+1); 
-
-			//This array is used in motion artifact removal to store the image numbers 
-			//being processed that contains 1,2,3...slices
-			imageNumberArray = Array.slice(imageNumberArray, 1, imageNumberArray.length); 
 			forLap = Array.copy(imageNumberArray);
-			
 		}
+
+		
+		
+
+		function getFramesPerTimepoint(toOpen, k, iniTextValuesMicrons, imageNumberArray, manCorrect) {
+    
+			selectWindow(File.getName(toOpen));
+			//Get out the current timepoint, split it into a stack for each frame (i.e. 14 stacks of 26 slices)
+			run("Duplicate...", "duplicate frames="+(k+1)+"");	
+			selectWindow(substring(File.getName(toOpen), 0, File.getName(toOpen), ".tif")) + "-1.tif");	
+			rename("Timepoint");
+
+			if(manCorrect == false){
+
+				//This array stores information we need to refer to during motion artifact 
+				//removal - i.e. the current timepoint we're processing as well as the 
+				//current z position we're processing, and the timepoint and z position 
+				//labels we want to use (these are appended with 0's if necessary so that
+				//all timepoints and z positions have the same number of digits)
+				motionArtifactRemoval = newArray(0,0,0,0);
+				//[0] is tNumber, [1] is zSlice, [2] is tOut, [3] is zLabel
+
+				//Set our current z slice to 0
+				motionArtifactRemoval[1] = 0;
+				slicesForZ = nSlices;
+				//This array is used to store the square difference between images and 
+				//their references in artifact removal
+				intDenDiff=newArray(slicesForZ); 
+		
+				//This array is used to store which images pass the motion artifact 
+				//removal process using the cutoff method
+				imagesToCombineCutoff=newArray(iniTextValuesMicrons[3]);
+
+			} 
+
+			//Loop through all Z points in our image
+			for(i0=0; i0<(iniTextValuesMicrons[3]); i0++) {
+				
+				if(manCorrect == false){
+					//If our z or t labels are below 10, prefix with a 0
+					for(i1=0; i1<2; i1++) {
+						if(motionArtifactRemoval[i1]<10) {
+							motionArtifactRemoval[i1+2] = "0" + motionArtifactRemoval[i1];
+						} else {
+							motionArtifactRemoval[i1+2] = "" + motionArtifactRemoval[i1];
+						}
+					}	
+				}
+
+				//If automatically selecting frames and we dont have a store of manually selected frames
+				if(manCorrect == false && File.exists(directories[1] +substring(toOpen, 0, indexOf(toOpen, ".tif")) + "/Slices To Use.csv")==0 || manCorrect == true) {
+
+					subName = makeCurrentSubstack(iniTextValuesMicrons, i0);
+
+					if(manualFlag == true){
+
+						slicesKeeping = selectFramesManually(fToKeep, subName);
+
+					} else {
+
+						intDenDiff = getLaplacianMax(intDenDiff);
+
+						slicesKeeping = someFunc()
+					}
+						
+					imageNumberArray =  removeRejectedFrames(i0, k, iniTextValuesMicrons, imageNumberArray, slicesKeeping, subName);
+
+				}
+
+			}
+
+			selectWindow("Timepoint");
+			run("Close");
+
+			return imageNumberArray;
+
+		}
+
+
 			
 
 		//Reorder each individual timepoint stack in Z so that any out of position slices are positioned correctly for motion artifact detection and removal
 		//Go through each timepoint
 		for(k=0; k<timepoints; k++) {
 
-			//Set our current z slice to 0
-			motionArtifactRemoval[1] = 0;
-			selectWindow(imagesInput[i]);
-			
-			//Get out the current timepoint, split it into a stack for each frame (i.e. 14 stacks of 26 slices)
-			run("Duplicate...", "duplicate frames="+(k+1)+"");
-			selectWindow(substring(imagesInput[i], 0, indexOf(imagesInput[i], ".tif")) + "-1.tif");	
-			rename("Timepoint");
-				
-			slicesForZ = nSlices;
 
-			//This array is used to store the square difference between images and 
-			//their references in artifact removal
-			intDenDiff=newArray(slicesForZ); 
-	
-			//This array is used to store which images pass the motion artifact 
-			//removal process using the cutoff method
-			imagesToCombineCutoff=newArray(iniTextValuesMicrons[3]); 
 		
 			//Loop through all Z points in our image
 			for(i0=0; i0<(iniTextValuesMicrons[3]); i0++) {
-	
-				//If our z or t labels are below 10, prefix with a 0
-				for(i1=0; i1<2; i1++) {
-					if(motionArtifactRemoval[i1]<10) {
-						motionArtifactRemoval[i1+2] = "0" + motionArtifactRemoval[i1];
-					} else {
-						motionArtifactRemoval[i1+2] = "" + motionArtifactRemoval[i1];
-					}
-				}
-				
 				
 				//If automatically selecting frames and we dont have a store of manually selected frames
 				if(manCorrect == false && File.exists(directories[1] +substring(imagesInput[i], 0, indexOf(imagesInput[i], ".tif")) + "/Slices To Use.csv")==0) {
@@ -1032,35 +1134,9 @@ for(i=0; i<imagesInput.length; i++) {
 					selectWindow("Timepoint");
 					run("Make Substack...", " slices="+((iniTextValuesMicrons[4]*i0)+1)+"-"+(iniTextValuesMicrons[4]*(i0+1))+"");
 					rename(subName);
-				
-					//As a way of detection blur in our imgaes, we use a laplacian of gaussian filter on our stack,
-					//https://www.pyimagesearch.com/2015/09/07/blur-detection-with-opencv/
-					//https://stackoverflow.com/questions/7765810/is-there-a-way-to-detect-if-an-image-is-blurry
-							
-					//We register our substack before running it through the laplacian filter
-					print("Registering and removing artifacts from", subName);
-					selectWindow(subName);
-					subSlices=nSlices;
-					run("FeatureJ Laplacian", "compute smoothing=1.0");
-				
-					//Close our pre laplacian image and rename our laplacian filtered image
-					selectWindow(subName);
-					rename("toKeep");
-					selectWindow(subName + " Laplacian");
-					rename(subName);
-					imageSlices = nSlices;
-						
-					//For each slice in the stack, store the maximum pixel value of the laplacian filtered slice
-					for(currSlice = 1; currSlice < (imageSlices+1); currSlice++) {
-						setSlice(currSlice);
-						getRawStatistics(nPixels, mean, min, max, std, hist);
-						intDenDiff[((currSlice-1)+(i0*nSlices))] = max;
-					}
 
-					//Close the laplacian filtered image
-					selectWindow(subName);
-					run("Close");
-					
+					function selectFramesAboveCutoff()
+				
 					//Cutoff routine
 						
 					//This cutoff routine takes the measured square differences of each 

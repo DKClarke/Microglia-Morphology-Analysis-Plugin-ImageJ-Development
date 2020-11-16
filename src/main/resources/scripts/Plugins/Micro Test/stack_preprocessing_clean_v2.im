@@ -1039,3 +1039,26 @@ for(currImage = 0; currImage<imagesToProcessArray.length; currImage++) {
 	outputArray =  openAndGetImageInfo(fullPath, directories[3]);
 	automatedPreProcessing(imagesToProcessArray[currImage]);
 }
+
+function autoDetectFramesToRemove() {
+
+		//This array stores information we need to refer to during motion artifact 
+		//removal - i.e. the current timepoint we're processing as well as the 
+		//current z position we're processing, and the timepoint and z position 
+		//labels we want to use (these are appended with 0's if necessary so that
+		//all timepoints and z positions have the same number of digits)
+		motionArtifactRemoval = newArray(0,0,0,0);
+		//[0] is tNumber, [1] is zSlice, [2] is tOut, [3] is zLabel
+
+		timepoints = outputArray[0];
+		//This is an array we fill with the names of the processed timepoint stacks
+		timepointNamesCutoff = newArray(timepoints);
+
+		//Generate imageNumberArray as all the slices in the image, and copy this to a forLap object
+		//which we use to select frames for our laplacian average
+		imageNumberArray = getArrayOfImageSliceNumbers(toOpen);
+		forLap = Array.copy(imageNumberArray);
+
+
+
+}

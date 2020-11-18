@@ -1,39 +1,50 @@
-function findIniFile(iniFolder) {
+function findFileWithFormat(folder, fileFormat) {
 
-	//We get the list of files in the iniFolder
-	iniFileList = getFileList(iniFolder);
+	//We get the list of files in the folder
+	fileList = getFileList(folder);
 	
-	//Find our ini file
-	found = false;
-	for(i=0; i<iniFileList.length; i++) {
-		if(endsWith(toLowerCase(iniFileList[i]), "ini")) {
-			//Create a variable that tells us which ini file to open
-			iniToOpen = iniFolder + iniFileList[i]; 
-			i = iniFileList.length;
-			found = true;
+	//Create an array to store our locations and a counter for how many files we've found
+	storeIt = newArray(1);
+	storeIt[0] = 'none';
+	count = 0;
+	for(i=0; i<fileList.length; i++) {
+		if(endsWith(toLowerCase(fileList[i]), fileFormat)) {
+			//Create a variable that tells us which file has the format we're looking for
+			fileLocation = folder + fileList[i]; 
+			
+			//If we're onto our second location, create a new array to tack onto storeIt that we then
+			//fill with the new location
+			if(count >0) {
+				appendArray = newArray(1);
+				storeIt = Array.concat(storeIt, appendArray);
+			}
+			
+			//Store the location and increase the count
+			storeIt[count] = fileLocation;
+			count += 1;
 		}
 	}
 
-	if(found == false) {
-		exit("No ini file found");
+	if(storeIt[0] == 'none') {
+		exit("No file found");
 	} else {
-		return iniToOpen;
+		return storeIt;
 	}
 
 }
 
-function parseIniValues(iniTextStringsPre, iniTextIndicesPreAdds, iniToOpen) {
+function parseIniValues(iniStrings, iniToOpen) {
 		
 	//We open the ini file as a string
 	iniText = File.openAsString(iniToOpen);	
 	
-	iniTextValuesMicrons = newArray(iniTextStringsPre.length);
+	iniValues = newArray(iniStrings.length);
 
 	//Looping through the values we want to grab
-	for(i=0; i<iniTextStringsPre.length; i++) {
+	for(i=0; i<iniStrings.length; i++) {
 
-		//We create a start point that is the index of our iniTextStringsPre + iniTextIndicesPreAdds
-		startPoint = indexOf(iniText, iniTextStringsPre[i])+iniTextIndicesPreAdds[i];
+		//We create a start point that is the index of our iniStrings + the length of the string
+		startPoint = indexOf(iniText, iniStrings[i])+lengthOf(iniStrings[i])
 
 		//Get a substring that starts at our startPoint i.e. where the numbers of our current string start
 		checkString = substring(iniText, startPoint);
@@ -53,35 +64,30 @@ function parseIniValues(iniTextStringsPre, iniTextIndicesPreAdds, iniToOpen) {
 		}
 
 		//Parse our values
-		iniTextValuesMicrons[i] = parseFloat(realString);
+		iniValues[i] = parseFloat(realString);
 	}
 
-	return iniTextValuesMicrons;
+	return iniValues;
 
 }
 
 //This is a function to retrieve the data from the ini file. The ini file contains calibration information for the 
 //entire experiment that we use to calibrate our images. iniFolder is the folder within which the ini file is located, 
-//and iniTextValuesMicrons is an array we pass into the function that we fill with calibration values before returning it	
-function getIniData(iniFolder, iniTextStringsPre) {
+//and iniValues is an array we pass into the function that we fill with calibration values before returning it	
+function getIniData(iniFolder, iniStrings) {
 
-	iniToOpen = findIniFile(iniFolder);
-
-	//This is an array of the length of characters in each iniTextStringsPre item, so we can look this far after the
-	//start of each item to find the numeric value
-	iniTextIndicesPreAdds = newArray(iniTextStringsPre.length);
-	for(i = 0; i<iniTextStringsPre.length; i++) {
-		iniTextIndicesPreAdds[i] = lengthOf(iniTextStringsPre[i]);
+	//Find our ini file
+	iniLocations = findFileWithFormat(iniFolder, "ini");
+	if(iniLocations.length > 1) {
+		exit("More than 1 ini file found, exiting plugin");
+	} else {
+		iniToOpen = iniLocations[0];
 	}
 
-	iniTextValuesMicrons = parseIniValues(iniTextStringsPre, iniTextIndicesPreAdds, iniToOpen);
+	iniValues = parseIniValues(iniStrings, iniToOpen);
 		
-	return iniTextValuesMicrons;
+	return iniValues;
 }
-
-////////////////////////////////////////////////////////////////////////////////
-//////////////////////// Main user input sections //////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
 
 function getWorkingAndStorageDirectories(){
 
@@ -90,22 +96,22 @@ function getWorkingAndStorageDirectories(){
     Dialog.show();
 
     setOption("JFileChooser", true);
-    MorphologyProcessing = getDirectory("Choose morphology analysis working directory");
+    workingDirectory = getDirectory("Choose morphology analysis working directory");
 
     Dialog.create("Pick Directory");
     Dialog.addMessage("Choose the image storage directory");
     Dialog.show();
     //Get the parent 2P directory i.e. where all the raw 2P images are stored
-    directoryName = getDirectory("Choose the image storage directory");
+    imageStorage = getDirectory("Choose the image storage directory");
     setOption("JFileChooser", false);
 
     //Here we create an array to store the full name of the directories we'll be 
     //working with within our morphology processing directory
-    directories=newArray(MorphologyProcessing+"Input" + File.separator, 
-                        MorphologyProcessing+"Output" + File.separator, 
-                        MorphologyProcessing+"Done" + File.separator,
-						directoryName);
-    //[0] is input, [1] is output, [2] is done, [3] is directoryName
+    directories=newArray(workingDirectory+"Input" + File.separator, 
+						workingDirectory+"Output" + File.separator, 
+						workingDirectory+"Done" + File.separator,
+						imageStorage);
+    //[0] is input, [1] is output, [2] is done, [3] is image storage
 
     directoriesNames = newArray('Input', 'Output', 'Done', 'Image Storage');
     for (i = 0; i < directories.length; i++) {
@@ -191,7 +197,7 @@ function getPreprocessingInputs() {
 	}
 
     return inputs_array;
-    //[0] is fToKeep, [1] is lapFrames, [2] is manCorrect, [3] is preProcStringToFind
+    //[0] is differenceFrames, [1] is blurFrames, [2] is manSelect, [3] is stringToFind
 
 }
 
@@ -203,21 +209,18 @@ function removeZeros(inputArray) {
 	//output array (which should be of length 1) before then concatenating an 
 	//array of length 1 to it to add another location to store another non-zero 
 	//value from the input array
-	
     output = newArray(1);
-	arrayToConcat = newArray(1);
-
+	count = 0;
 	for(i=0; i<inputArray.length; i++) {
 		if(inputArray[i]!=0) {
 			currentIndex=output.length-1;
-			output[currentIndex]=inputArray[i];
-			output = Array.concat(output, arrayToConcat);
+			if(count > 0) {
+				appendArray = newArray(1);
+				output = Array.concat(output, appendArray);
+			}
+			output[count] = inputArray[i];
+			count += 1;
 		}
-	}
-
-	//If the final value of the output array is 0, we trim the array by one
-	if(output[output.length-1]==0) {
-		output = Array.trim(output, output.length-1);
 	}
 
 	return output;
@@ -268,29 +271,39 @@ function listFilesAndFilesSubDirectories(directoryName, subString) {
 	
 }
 
-function moveImageToInput(fileLocations, directories){
+function parseAnimalTreatmentIDsFromStoragePath(imagePathInStorage) {
 
-    //Loop through all matching files
-    for(i=0; i<fileLocations.length; i++) {
-
-        //Here we take the location of the file that is a microglia morphology 
+		//Here we take the location of the file that is a microglia morphology 
         //image, and we split up parts of the file name and store them in the 
         //parentArray for easier access where index [0] contains the whole string 
         //of image location, and each subsequent index is the parent directory of 
         //the previous index
         parentArray=newArray(4);
-        parentArray[0] = fileLocations[i];
+        parentArray[0] = imagePathInStorage;
         for(i1=0; i1<(parentArray.length-1); i1++){
             parentArray[i1+1] = File.getParent(parentArray[i1]);
         }
+		//[0] is the full path, [1] is the treatment name, [2] is the animal name,
+		//and [3] is the storage directory
+
+		return parentArray;
+
+}
+
+function moveImageToInput(fileLocations, directories, appendWith){
+
+    //Loop through all matching files
+    for(i=0; i<fileLocations.length; i++) {
+
+        imageLabels = parseAnimalTreatmentIDsFromStoragePath(fileLocations[i])
 		//[0] is the full path, [1] is the treatment name, [2] is the animal name,
 		//and [3] is the storage directory
     
         //Here we create a name to save the image as based on the names in the last 2
         //directories of our image location and we add " Microglia Morphology" on 
         //to the end of it
-        saveName = File.getName(parentArray[2]) + " " + 
-                    File.getName(parentArray[1]) + " Microglia Morphology";
+        saveName = File.getName(imageLabels[2]) + " " + 
+                    File.getName(imageLabels[1]) + " " + appendWith;
 
         //If this file is already saved in our input directory, or in our done 
         //directory, then we ignore it, but if it isn't we proceed
@@ -307,12 +320,19 @@ function moveImageToInput(fileLocations, directories){
 
 }
 
-function getManualFlaggedImages(tableLocation) {
+function getManualFlaggedImages(manualFlagTable) {
 
-	if(File.exists(tableLocation)==1) {
+	proceed = false;
+	if(File.exists(manualFlagTable)==1) {
+		proceed = true;
+	}
+
+	if(proceed == true) {
+
+		print("Retrieving image IDs to manually select frames for");
 
 		//Open the table
-		open(tableLocation);
+		open(manualFlagTable);
 		tableName = Table.title;
 		selectWindow(tableName);
 
@@ -326,26 +346,28 @@ function getManualFlaggedImages(tableLocation) {
 				imageName[currImage] = 0;
 			}
 		}
-		forStorage = removeZeros(imageName);
+		imagesForMan = removeZeros(imageName);
 
 		//Get the file name of the manually flagged images
-		if(forStorage.length != 0) {
-			ArrayConc = Array.copy(forStorage);
-			for(currImage = 0; currImage<forStorage.length; currImage++) {
-				ArrayConc[currImage] = File.getName(forStorage[currImage]);
+		if(imagesForMan.length != 0) {
+			for(currImage = 0; currImage<imagesForMan.length; currImage++) {
+				imagesForMan[currImage] = File.getName(imagesForMan[currImage]);
 			}
 		} else {
-			ArrayConc = newArray('false');
+			proceed = false;
 		}
 
 		selectWindow(tableName);
 		run("Close");
 
-	} else {
-		ArrayConc = newArray('false');
+	} 
+	
+	if(proceed == false) {
+		print("No image IDs to be manually processed");
+		imagesForMan = newArray('false');
 	}
 
-	return ArrayConc;
+	return imagesForMan;
 
 }
 
@@ -355,80 +377,64 @@ function getManualFlaggedImages(tableLocation) {
 //contain different bits of info i.e. info about the animal and 
 //timepoint that we store at index [0] in the array, the timepoint only at [1]
 //the animal only at [2] and finally the file name without the .tif on the end that we store at [3]
-function getAnimalTimepointInfo(inputName) {
+function getAnimalTimepointInfo(inputName, appendWith) {
   
   outputArray = newArray(4);
   
-  outputArray[0] = File.getName(substring(inputName, 0, indexOf(inputName, " Microglia Morphology")));
+  outputArray[0] = File.getName(substring(inputName, 0, indexOf(inputName, (" " + appendWith))));
   outputArray[1] = toLowerCase(substring(outputArray[0], lastIndexOf(outputArray[0], " ")+1));
   outputArray[2] = toLowerCase(substring(outputArray[0], 0, lastIndexOf(outputArray[0], " ")));
-  outputArray[3] = File.getName(substring(inputName, 0, indexOf(inputName, ".tif")));
+  outputArray[3] = File.getNameWithoutExtension(inputName);
 
   return outputArray;
 
 }
 
-function openAndGetImageInfo(toOpen, iniFolder) {
+function openAndGetImageTimepoints(imagePath, calibrationValues, appendWith) {
 
-    open(toOpen);
+    open(imagePath);
             
     //Get out the animal name info - animal and 
     //timepoint that we store at index [0] in the array, the timepoint only at [1]
     //the animal only at [2] and finally the file name without the .tif on the end
     //that we store at [3]
-    imageNames = getAnimalTimepointInfo(toOpen);
+    imageNames = getAnimalTimepointInfo(imagePath, appendWith);
     print("Preprocessing ", imageNames[0]); 
-    print(File.getNameWithoutExtension(toOpen) + " opened");
-        
-    print("Preprocessing ", imageNames[0]); 
+    print(imageNames[3] + " opened");
 
-	//This is an array with the strings that come just before the information we want to retrieve from the ini file.
-	iniTextStringsPre = newArray("x.pixel.sz = ", "y.pixel.sz = ", "z.spacing = ", "no.of.planes = ", "frames.per.plane = ");
+	//Calculate the number of timepoints in the image by multiplying frames per plane * number of plans, and divide
+	//that by the number of slices in the image
+	selectWindow(File.getName(imagePath));
+    timepoints = (calibrationValues[3] * calibrationValues[4])/nSlices;
 
-	//Array to store the values we need to calibrate our image with
-	iniTextValuesMicrons =  getIniData(iniFolder, iniTextStringsPre);
-	//Index 0 is xPxlSz, then yPxlSz, zPxlSz, ZperT, FperZ
-
-	for (i = 0; i < iniTextStringsPre.length; i++) {
-		print(iniTextStringsPre[i], iniTextValuesMicrons[i]);
-	}
-
-    //Calculate the number of timepoints in the image, and also a value framesReorder that we pass in 
-    //to reorganise our slices as we want
-	selectWindow(File.getName(toOpen));
-    timepoints = (iniTextValuesMicrons[3] * iniTextValuesMicrons[4])/nSlices;
-    framesReorder = (iniTextValuesMicrons[3] * iniTextValuesMicrons[4])/timepoints;
-
-	outputArray = newArray(timepoints, framesReorder);
-	concat = Array.concat(outputArray, iniTextValuesMicrons);
-
-    return concat;
+    return timepoints;
 
 }
 
-function formatManualSelectionImage(toOpen, timepoints, framesReorder) {
+function formatManualSelectionImage(imagePath, timepoints) {
    
    //Convert the image to 8-bit, then adjust the contrast across all slices 
     //to normalise brightness to that of the top slice in the image
-    selectWindow(File.getName(toOpen));
+	selectWindow(File.getName(imagePath));
+	slices = nSlices;
     print("Converting to 8-bit");
     run("8-bit");
 
     //Here we reorder our input image so that the slices are in the right structure for motion artefact removal
     print("Reordering for manual frame selection");
-    run("Stack to Hyperstack...", "order=xyczt(default) channels=1 slices="+timepoints+" frames="+framesReorder+" display=Color");
+    run("Stack to Hyperstack...", "order=xyczt(default) channels=1 slices="+timepoints+" frames="+slices+" display=Color");
     run("Hyperstack to Stack");
-    run("Stack to Hyperstack...", "order=xyczt(default) channels=1 slices="+framesReorder+" frames="+timepoints+" display=Color");
+    run("Stack to Hyperstack...", "order=xyczt(default) channels=1 slices="+slices+" frames="+timepoints+" display=Color");
 
 }
 
-function getArrayOfImageSliceNumbers(toOpen) {
+function getArrayOfImageSliceNumbers(imagePath) {
 
     //This makes an array with which is the length of the number of
 	//Z we have per timepoint times the number of frames per Z (i.e., every slice in the stack)
 	//We do this +1, then slice it, so that we get an array of the same length as our stack, starting
 	//at a value of 1
-	selectWindow(File.getName(toOpen));
+	selectWindow(File.getName(imagePath));
 	slices = nSlices;
     imageNumberArray = Array.getSequence(slices+1); 
     imageNumberArray = Array.slice(imageNumberArray, 1, imageNumberArray.length); 
@@ -438,75 +444,150 @@ function getArrayOfImageSliceNumbers(toOpen) {
 
 }
 
-function makeCurrentSubstack(iniTextValuesMicrons, i0) {
+function makeZPlaneSubstack(calibratedValues, zPlane, parentImage) {
+
+		framesPerPlane = calibratedValues[4];
+		startFrame = (framesPerPlane * (zPlane - 1)) + 1;
+		endFrame = (framesPerPlane * zPlane)
 
     	//Here we create substacks from our input image - one substack 
         //corresponding to all the frames at one Z point
-        subName="Substack ("+((iniTextValuesMicrons[4]*i0)+1)+"-"+ (iniTextValuesMicrons[4]*(i0+1))+")";
-        selectWindow("Timepoint");
-        slicesInTimepoint = nSlices;
-        print(slicesInTimepoint);
-        print(((iniTextValuesMicrons[4]*i0)+1)+"-"+ (iniTextValuesMicrons[4]*(i0+1)));
-        run("Make Substack...", " slices="+((iniTextValuesMicrons[4]*i0)+1)+"-"+(iniTextValuesMicrons[4]*(i0+1))+"");
+        subName="Substack ("+startFrame+"-"+endFrame+")";
+        selectWindow(parentImage);
+        print((startFrame+"-"+endFrame);
+        run("Make Substack...", " slices="+(startFrame+"-"+endFrame)+"");
         rename(subName);
 
         return subName;
 
 }
 
-function selectFramesManually(fToKeep, subName) {
+function selectFramesManually(noFramesToSelect, imageName) {
     
-    selectWindow(subName);
+    selectWindow(imageName);
     subSlices = nSlices;
 	
     //Create an array to store which of the current substack slices we're keeping - fill with zeros
-    slicesKeeping = newArray(subSlices);
-    slicesKeeping = Array.fill(slicesKeeping, 0);
+    framesToKeep = newArray(subSlices);
+    framesToKeep = Array.fill(framesToKeep, 0);
 
     setOption("AutoContrast", true);
 
     //Looping through the number of frames the user selected to keep, ask the user to
-    //scroll to a frame to retain, the index of this frame in slicesKeeping is then set to 1
-    for(currFrame=0; currFrame < fToKeep; currFrame++) {
+    //scroll to a frame to retain, the index of this frame in framesToKeep is then set to 1
+    for(currFrame=0; currFrame < noFramesToSelect; currFrame++) {
             
         setBatchMode("Exit and Display");
         run("Tile");
-        selectWindow(subName);
+        selectWindow(imageName);
         waitForUser("Scroll onto the frame to retain on the image labelled 'Substack etc'");
         setBatchMode(true);
         keptSlice = getSliceNumber();
         print("Slice selected: ", keptSlice);
         print("If selecting more, select a different one");
 
-        slicesKeeping[(keptSlice-1)] = 1;
+        framesToKeep[(keptSlice-1)] = 1;
             
     }
 
     setOption("AutoContrast", false);
 
-    return slicesKeeping;
+    return framesToKeep;
 }
 
-function removeRejectedFrames(i0, k, iniTextValuesMicrons, imageNumberArray, slicesKeeping, subName) {
+function removeRejectedFrames(zPlane, currentTimepoint, numberOfZPlanes, arrayOfAllSlices, framesToKeep, imageName) {
 
     //Close the image
-    selectWindow(subName);
+    selectWindow(imageName);
     subSlices = nSlices;
-    run("Close");
-
-    //If the user is keeping a particular frame, we retain that number in our imageNumberArray, else
+	run("Close");
+	
+    //If the user is keeping a particular frame, we retain that number in our arrayOfAllSlices, else
     //we set it to zero
-    for (i1=0;i1<subSlices;i1++) {
-        if(slicesKeeping[i1] == 0) {
-            imageNumberArray[i1+(i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3])))] = 0;
+    for (currentFrame=0; currentFrame<subSlices; currentFrame++) {
+
+		framesBeforeThisZ = (zPlane-1)*subSlices;
+		currentFrameInTimepoint = currentFrame + framesBeforeThisZ;
+
+		totalSlicesInTimepoint = subSlices * numberOfZPlanes;
+		slicesPrecedingThisTimepoint = (currentTimepoint-1) * totalSlicesInTimepoint;
+
+		//Calculate what frame (out of all frames in the input image) we're currently on
+		currentFrameOfTotal = currentFrameInTimepoint + slicesPrecedingThisTimepoint
+
+		//If we're not keeping this frame, set its value to 0
+        if(framesToKeep[currentFrame] == 0) {
+            arrayOfAllSlices[currentFrameOfTotal] = 0;
         }
     }
 
-    return imageNumberArray;
+    return arrayOfAllSlices;
 
 }
 
-function manualFrameSelection(directories, manualFlaggedImages, fToKeep) {
+function populateAndSaveSlicesToUseFile(slicesToUseFile, arrayOfChosenSlices) {
+
+	tableName = File.getNameWithoutExtension(slicesToUseFile);
+	
+	//Save our array in a csv file so we can read this in later
+	Table.create(tableName);
+	selectWindow(tableName);
+	Table.setColumn("Slices", arrayOfChosenSlices);
+	
+	//If the output directory for the input image hasn't already been made, make it
+	directoryToMake = newArray(File.getDirectory(slicesToUseFile));
+	makeDirectories(directoryToMake);
+
+	//Save our table
+	Table.save(slicesToUseFile);
+
+	actualTableName = Table.title;
+
+	//Since we save it every time, we have to rename it to get rid of the .csv 
+	if(actualTableName != tableName) {
+		Table.rename(actualTableName,tableName);
+	}
+		
+	selectWindow(tableName);
+	run("Close");
+
+}
+
+function getTimepointStack(imagePath, currentTimepoint, renameAs) {
+	
+	selectWindow(File.getName(imagePath));
+	
+	//Get out the current timepoint, split it into a stack for each frame (i.e. 14 stacks of 26 slices)
+	run("Duplicate...", "duplicate frames="+(currentTimepoint)+"");	
+	selectWindow(substring(File.getName(imagePath), 0, File.getName(imagePath), ".tif")) + "-1.tif");	
+	rename(renameAs);
+
+}
+
+
+function manuallyApproveFrames(toOpen, currentTimepoint, iniValues, arrayOfAllSlices, framesToKeep, renameAs) {
+	
+	numberOfZPlanes = iniValues[3];
+
+	//Loop through all Z points in our image
+	for(zPlane=1; zPlane<(numberOfZPlanes + 1); zPlane++) {
+
+		subName = makeZPlaneSubstack(iniValues, zPlane, renameAs);
+
+		manualFramesToKeep = selectFramesManually(framesToKeep, subName);
+			
+		arrayOfAllSlices =  removeRejectedFrames(zPlane, currentTimepoint, numberOfZPlanes, arrayOfAllSlices, manualFramesToKeep, subName);
+
+	}
+
+	selectWindow(renameAs);
+	run("Close");
+
+	return arrayOfAllSlices;
+
+}
+
+function manualFrameSelection(directories, manualFlaggedImages, iniValues, framesToKeep, appendWith) {
 	
 	//Loop through the files in the manually flagged images array
 	for(i=0; i<manualFlaggedImages.length; i++) {
@@ -523,71 +604,51 @@ function manualFrameSelection(directories, manualFlaggedImages, fToKeep) {
 
         if(proceed = true) {
 
-            print("Manually selecting frames for", File.getNameWithoutExtension(manualFlaggedImages));
+            print("Manually selecting frames for", File.getNameWithoutExtension(toOpen));
             
 			//Open the image, get ini values, use to calculate the numbber of timepoints and values
 			//we need to format the stack for manual selection
-            outputArray = openAndGetImageInfo(toOpen, directories[3]);
-            //[0] is timepoints, [1] is framesReorder, rest is iniTextValuesMicrons
-            timepoints = outputArray[0];
-
-			//Get our iniTextValuesMicrons array
-            iniTextValuesMicrons = Array.slice(outputArray,2,outputArray.length);
+            timepoints = openAndGetImageTimepoints(toOpen, iniValues, appendWith);
 
 			//Format the image for manual selection
-			formatManualSelectionImage(toOpen, outputArray[0], outputArray[1]);
+			formatManualSelectionImage(toOpen, timepoints);
 
 			//Get an array where each element represents a slice of the stack
-			imageNumberArray = getArrayOfImageSliceNumbers(toOpen);
+			arrayOfAllSlices = getArrayOfImageSliceNumbers(toOpen);
 
-            //Reorder each individual timepoint stack in Z so that any out of position slices are positioned correctly for motion artifact detection and removal
+			//Reorder each individual timepoint stack in Z so that any out of position slices are positioned correctly 
+			//for motion artifact detection and removal
             //Go through each timepoint
-            for(k=0; k<timepoints; k++) {	
+            for(currentTimepoint=1; currentTimepoint<timepoints+1; k++) {	
 				
-				getTimepointStack(toOpen, k);
-                imageNumberArray = manuallyApproveFrames(toOpen, k, iniTextValuesMicrons, imageNumberArray, fToKeep);
+				renameAs = "Timepoint"
+				getTimepointStack(toOpen, k, renameAs);
+                arrayOfAllSlices = manuallyApproveFrames(toOpen, currentTimepoint, iniValues, arrayOfAllSlices, framesToKeep, renameAs);
 
-            }
+			}
 
-            tableName = File.getNameWithoutExtension(slicesToUseFile);
-
-            //Save our array in a csv file so we can read this in later
-            Table.create(tableName);
-            selectWindow(tableName);
-            Table.setColumn("Slices", imageNumberArray);
-
-            //If the output directory for the input image hasn't already been made, make it
-            if(File.exists(directories[1] + manualFlaggedImages[i]+"/") == 0) {
-                File.makeDirectory(directories[1]+manualFlaggedImages[i] +"/");
-            }
-
-            Table.save(slicesToUseFile);
-            actualTableName = Table.title;
-            
-            //Since we save it every time, we have to rename it to get rid of the .csv 
-            if(actualTableName != tableName) {
-                Table.rename(actualTableName,tableName);
-            }
-                
-            selectWindow(tableName);
-            run("Close");
+			populateAndSaveSlicesToUseFile(slicesToUseFile, arrayOfAllSlices);
 
             Housekeeping();
 
-        }	
+        } else {
+
+			print("Either image ", File.getNameWithoutExtension(toOpen), " doesn't exist, or it has a SlicesToUse.csv file already");
+
+		}	
 
     } 
 
 }
 
-function manualFrameSelectionWrapper(directories, manualFlaggedImages, fToKeep) {
+function manualFrameSelectionWrapper(directories, manualFlaggedImages, iniValues, framesToKeep, appendWith) {
 	
 	//If the user wants to manually select frames, and we have images eligibile for this (i.e. not being ignored from analysis or
 	//already manually frames chosen
 	if(manualFlaggedImages[0] != 'false') {
 
 			print('Beginning manual frame selection');
-			manualFrameSelection(directories, manualFlaggedImages, fToKeep);
+			manualFrameSelection(directories, manualFlaggedImages, iniValues, framesToKeep, appendWith);
 
 	} else {
 
@@ -604,30 +665,33 @@ function imagesToProcess(manualFlaggedImages, directories) {
 			for(currManualCheck = 0; currManualCheck < manualFlaggedImages.length; currManualCheck++){
 
 				//If they're in our manual flagged images array, and they don't have a slices to use file created for them, exclude them
-				if(imagesInput[currImage] == manualFlaggedImages[currManualCheck] && File.exists(directories[1] + manualFlaggedImages[currManualCheck] + "/Slices To Use.csv") != 1){
+				if(File.getName(imagesInput[currImage]) == manualFlaggedImages[currManualCheck] && File.exists(directories[1] + manualFlaggedImages[currManualCheck] + "/Slices To Use.csv") != 1){
 					imagesInput[currImage] = 0;
 					break;
 				}
 			}
 		}
 
+		imagesToProcessArray = removeZeros(imagesInput);
+
 		//Return the array of images to put through processing
-		return imagesInput;
+		return imagesToProcessArray;
 }
 
-function automatedPreProcessing(imageTitle){
-			
+function stackContrastAdjustExpandCanvas(imageName){
+
 	//Adjust the contrast in the stack to normalise it across all Z depths and
 	//timepoints
 	print("Stack Contrast Adjusting");
-	selectWindow(imageTitle);
+	selectWindow(imageName);
+	run("8-bit");
 	setSlice(1);
 	run("Stack Contrast Adjustment", "is");
 	stackWindow = getTitle();
-	selectWindow(imageTitle);
+	selectWindow(imageName);
 	run("Close");
 	selectWindow(stackWindow);
-	rename(imageTitle);
+	rename(imageName);
 	run("8-bit");
 
 	//Increase the canvas size of the image by 100 pixels in x and y so that 
@@ -644,11 +708,11 @@ function automatedPreProcessing(imageTitle){
 }
 
 //This function removes any elements from an input array that conatins the string '.ini' and returns it
-function removeIniFromLocations(fileLocations) {
+function removeStringFromArray(fileLocations, string) {
 
 	for (i = 0; i < fileLocations.length; i++) {
-		if(indexOf(fileLocations[i], '.ini') > -1) {
-			print(fileLocations[i], 'is ini, deleting');
+		if(indexOf(fileLocations[i], string) > -1) {
+			print(fileLocations[i], 'deleting');
 			fileLocations[i] = 0;
 		}
 	}
@@ -659,56 +723,23 @@ function removeIniFromLocations(fileLocations) {
 	
 }
 
-function getTimepointStack(toOpen, k) {
-	
-	selectWindow(File.getName(toOpen));
-	
-	//Get out the current timepoint, split it into a stack for each frame (i.e. 14 stacks of 26 slices)
-	run("Duplicate...", "duplicate frames="+(k+1)+"");	
-	selectWindow(substring(File.getName(toOpen), 0, File.getName(toOpen), ".tif")) + "-1.tif");	
-	rename("Timepoint");
 
-}
-
-function manuallyApproveFrames(toOpen, k, iniTextValuesMicrons, imageNumberArray, fToKeep) {
-    
-	//Loop through all Z points in our image
-	for(i0=0; i0<(iniTextValuesMicrons[3]); i0++) {
-
-		subName = makeCurrentSubstack(iniTextValuesMicrons, i0);
-
-		slicesKeeping = selectFramesManually(fToKeep, subName);
-			
-		imageNumberArray =  removeRejectedFrames(i0, k, iniTextValuesMicrons, imageNumberArray, slicesKeeping, subName);
-
-
-	}
-
-	selectWindow("Timepoint");
-	run("Close");
-
-	return imageNumberArray;
-
-}
-
-
-function blurDetector(subName){
+function blurDetector(zPlaneWindow){
 
 	//As a way of detection blur in our imgaes, we use a laplacian of gaussian filter on our stack,
 	//https://www.pyimagesearch.com/2015/09/07/blur-detection-with-opencv/
 	//https://stackoverflow.com/questions/7765810/is-there-a-way-to-detect-if-an-image-is-blurry
 			
 	//We register our substack before running it through the laplacian filter
-	print("Registering and removing artifacts from", subName);
-	selectWindow(subName);
-	subSlices=nSlices;
+	print("Registering and removing artifacts from", zPlaneWindow);
+	selectWindow(zPlaneWindow);
 	run("FeatureJ Laplacian", "compute smoothing=1.0");
 
 	//Close our pre laplacian image and rename our laplacian filtered image
-	selectWindow(subName);
+	selectWindow(zPlaneWindow);
 	rename("toKeep");
-	selectWindow(subName + " Laplacian");
-	rename(subName);
+	selectWindow(zPlaneWindow + " Laplacian");
+	rename(zPlaneWindow);
 	imageSlices = nSlices;
 
 	outputArray = newArray(imageSlices);
@@ -721,8 +752,11 @@ function blurDetector(subName){
 	}
 
 	//Close the laplacian filtered image
-	selectWindow(subName);
+	selectWindow(zPlaneWindow);
 	run("Close");
+
+	selectWindow("toKeep");
+	rename(zPlaneWindow);
 
 	return outputArray
 
@@ -743,7 +777,7 @@ Housekeeping();
 //Ask the user for inputs on frames to keep, frames to use for the laplacian blur detector, whether to
 //manually correct frames, and the string to ID morphology images
 inputs_array = getPreprocessingInputs();
-fToKeep = inputs_array[0];
+diffDetectorFrames = inputs_array[0];
 lapFrames = inputs_array[1];
 manCorrect = inputs_array[2];
 preProcStringToFind = inputs_array[3];
@@ -754,11 +788,11 @@ preProcStringToFind = inputs_array[3];
 fileLocationsRaw = listFilesAndFilesSubDirectories(directories[3], preProcStringToFind);
 
 //Remove ini files
-fileLocations = removeIniFromLocations(fileLocationsRaw);
+fileLocations = removeStringFromArray(fileLocationsRaw, '.ini';
 
 //For each image in our image storage location, copy it into our input directory if it isn't already
-//in there (and isn't in the done folder either)
-moveImageToInput(fileLocations, directories);
+//in there (and isn't in the done folder either) and append the saved images with the preProcStringToFind
+moveImageToInput(fileLocations, directories, preProcStringToFind);
 
 //Now we get out the list of files in our input folder 
 //once we've gone through all the microglia morphology images in our image storage directory
@@ -769,9 +803,20 @@ imagesInput = getFileList(directories[0]);
 imagesToUseFile = directories[1] +  "Images to Use.csv";
 manualFlaggedImages = getManualFlaggedImages(imagesToUseFile);
 
+//This is an array with the strings that come just before the information we want to retrieve from the ini file.
+iniTextStringsPre = newArray("x.pixel.sz = ", "y.pixel.sz = ", "z.spacing = ", "no.of.planes = ", "frames.per.plane = ");
+
+//Array to store the values we need to calibrate our image with
+iniValues =  getIniData(directories[3], iniTextStringsPre);
+//Index 0 is xPxlSz, then yPxlSz, zPxlSz, ZperT, FperZ
+
+for (i = 0; i < iniTextStringsPre.length; i++) {
+	print(iniTextStringsPre[i], iniValues[i]);
+}
+
 //For our images that are flagged for manual frame selection, ask the user to identify which frames
 //to keep, then for each image, save this in a table in that images directory
-manualFrameSelectionWrapper(directories, manualFlaggedImages, fToKeep);
+manualFrameSelectionWrapper(directories, manualFlaggedImages, iniValues, diffDetectorFrames, preProcStringToFind);
 
 //Get the list of images we're going to process - if we've selected to process manual images, these
 //are what we process, else we do non-manually flagged images
@@ -782,73 +827,47 @@ Array.show(imagesToProcessArray);
 for(currImage = 0; currImage<imagesToProcessArray.length; currImage++) {
 
 	fullPath = directories[0] + imagesToProcessArray[currImage];
-	outputArray =  openAndGetImageInfo(fullPath, directories[3]);
-	automatedPreProcessing(imagesToProcessArray[currImage]);
+	timepoints =  openAndGetImageTimepoints(fullPath, iniValues, preProcStringToFind);
+	stackContrastAdjustExpandCanvas(imagesToProcessArray[currImage]);
 }
 
-function autoDetectFramesToRemove() {
-
-		//This array stores information we need to refer to during motion artifact 
-		//removal - i.e. the current timepoint we're processing as well as the 
-		//current z position we're processing, and the timepoint and z position 
-		//labels we want to use (these are appended with 0's if necessary so that
-		//all timepoints and z positions have the same number of digits)
-		motionArtifactRemoval = newArray(0,0,0,0);
-		//[0] is tNumber, [1] is zSlice, [2] is tOut, [3] is zLabel
-
-		timepoints = outputArray[0];
-		//This is an array we fill with the names of the processed timepoint stacks
-		timepointNamesCutoff = newArray(timepoints);
+function autoDetectFramesToRemove(imagePath, timepoints, iniValues) {
 
 		//Generate imageNumberArray as all the slices in the image, and copy this to a forLap object
 		//which we use to select frames for our laplacian average
-		imageNumberArray = getArrayOfImageSliceNumbers(toOpen);
-		forLap = Array.copy(imageNumberArray);
+		imageNumberArray = getArrayOfImageSliceNumbers(imagePath);
 
 		//Reorder each individual timepoint stack in Z so that any out of position slices are positioned correctly for motion artifact detection and removal
 		//Go through each timepoint
-		for(k=0; k<timepoints; k++) {
+		for(currentTimepoint = 1; currentTimepoint < timepoints+1; currentTimepoint++) {
 
-			//Set our current z slice to 0
-			motionArtifactRemoval[1] = 0;
-			
+			renameAs = "Timepoint";
 			//Get out the current timepoint, split it into a stack for each frame (i.e. 14 stacks of 26 slices)
-			getTimepointStack(imagesInput[i], k);
+			getTimepointStack(imagePath, currentTimepoint, renameAs);
 
-			slicesForZ = nSlices;
+			framesPerPlane = iniValues[4];
+			numberOfZPlanes = iniValues[3];
 
-			//This array is used to store the square difference between images and 
-			//their references in artifact removal
-			intDenDiff=newArray(slicesForZ); 
-	
-			//This array is used to store which images pass the motion artifact 
-			//removal process using the cutoff method
-			imagesToCombineCutoff=newArray(iniTextValuesMicrons[3]); 
+			numberOfFramesPerTimepoint = framesPerPlane * numberOfZPlanes;
+			blurResultsPerTimepoint = newArray(numberOfFramesPerTimepoint);
 
 			//Loop through all Z points in our image
-			for(i0=0; i0<(iniTextValuesMicrons[3]); i0++) {
-	
-				//If our z or t labels are below 10, prefix with a 0
-				for(i1=0; i1<2; i1++) {
-					if(motionArtifactRemoval[i1]<10) {
-						motionArtifactRemoval[i1+2] = "0" + motionArtifactRemoval[i1];
-					} else {
-						motionArtifactRemoval[i1+2] = "" + motionArtifactRemoval[i1];
-					}
-				}
+			for(zPlane=1; zPlane<(numberOfZPlanes + 1); zPlane++) {
 
 				//Here we create substacks from our input image - one substack 
 				//corresponding to all the frames at one Z point
-				subName = makeCurrentSubstack(iniTextValuesMicrons, i0);
+				subName = makeZPlaneSubstack(iniValues, zPlane, renameAs);
 
 				blurDetectorOutput = blurDetector(subName);
 
-				//For each slice in the stack, store the maximum pixel value of the laplacian filtered slice
-				for(currSlice = 0; currSlice < blurDetectorOutput.length; currSlice++) {
-					intDenDiff[((currSlice)+(i0*nSlices))] = blurDetectorOutput[currSlice];
+				framesInTimepointBeforeNow = (zPlane - 1) * numberOfZPlanes;
+				//For each slice in the stack, store the maximum pixel value of the laplacian filtered slice in this
+				//timepoint's results
+				for(currFrame = 0; currFrame < blurDetectorOutput.length; currFrame++) {
+					currentFrameInTimepoint = currFrame + framesInTimepointBeforeNow;
+					blurResultsPerTimepoint[currentFrameInTimepoint] = blurDetectorOutput[currFrame];					
 				}
-
-									
+	
 				//Cutoff routine
 					
 				//This cutoff routine takes the measured square differences of each 

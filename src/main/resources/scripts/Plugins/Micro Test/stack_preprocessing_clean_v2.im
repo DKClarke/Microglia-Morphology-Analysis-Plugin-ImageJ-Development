@@ -723,7 +723,6 @@ function removeStringFromArray(fileLocations, string) {
 	
 }
 
-
 function blurDetector(zPlaneWindow){
 
 	//As a way of detection blur in our imgaes, we use a laplacian of gaussian filter on our stack,
@@ -762,6 +761,90 @@ function blurDetector(zPlaneWindow){
 
 }
 
+function collapseArrayValuesIntoString(array, collapseCharacter) {
+	//This loop strings together the names stored in the arrayIn into a 
+	//concatenated string (called strung) that can be input into the substack 
+	//maker function so that we can make a substack of all kept TZ slices in
+	//a single go - we input the imageNumberArrayCutoff array
+	strung="";
+	for(i1=0; i1<array.length; i1++) {
+		
+		string=toString(array[i1], 0);
+						
+		//If we're not at the end of the array, we separate our values with a 
+		//comma
+		if(i1<imageNumberArrayCutoff.length-1) {
+			strung += string + collapseCharacter;
+	
+		//Else if we are, we don't add anything to the end
+		} else if (i1==imageNumberArrayCutoff.length-1) {
+			strung += string;	
+		}
+	
+	}
+
+	return strung;
+}
+
+//Part of motion processing, takes an array (currentStackSlices), removes zeros from it, then
+//creates a string of the numbers in the array before then making a substack of these slices
+//from an imagesInput[i] window, registering them if necessary, before renaming them
+//according to the info in motionArtifactRemoval
+function createReferenceFrame(framesFlaggedForRetention, currentSubstackWindowName, renameTo) {
+	
+	//Here we order then cutoff the zeros so we get a small array of the 
+	//slices to be retained
+	framesToRetain=removeZeros(framesFlaggedForRetention);
+					
+	//This loop strings together the names stored in the arrayIn into a 
+	//concatenated string (called strung) that can be input into the substack 
+	//maker function so that we can make a substack of all kept TZ slices in
+	//a single go - we input the imageNumberArrayCutoff array
+	strung= collapseArrayValuesIntoString(framesToRetain, ",");
+
+	//We then make a substack of our input image of the slices we're keeping 
+	//for this particular ZT point
+	selectWindow(currentSubstackWindowName);	
+	run("Make Substack...", "slices=["+strung+"]");
+	rename(renameTo);
+	selectWindow(renameTo);
+	newSlices = nSlices;
+		
+	//If the image has more than 1 slice, register it and average project it 
+	//so that we get a single image for this ZT point
+	if(newSlices>1){
+						
+		print("Registering ", currentSubstackWindowName);
+		run("MultiStackReg", "stack_1=["+renameTo+"] action_1=Align file_1=[]  stack_2=None action_2=Ignore file_2=[] transformation=[Translation]");
+		run("MultiStackReg", "stack_1=["+renameTo+"] action_1=Align file_1=[]  stack_2=None action_2=Ignore file_2=[] transformation=[Affine]");
+		print("Registered");
+						
+		selectWindow(renameTo);
+		run("Z Project...", "projection=[Average Intensity]");
+		selectWindow(renameTo);
+		run("Close");
+		selectWindow("AVG_" + renameTo);
+		rename(renameTo);
+	} else {
+		print("Only one frame retained, no registration or averaging being applied");
+	}
+
+}
+
+function registerToReferenceFrame(referenceFrame, zFramesWindow){
+					
+	selectWindow(referenceFrame);
+	run("Concatenate...", " title = referenceFrameAttached image1=["+referenceFrame+"] image2="+zFramesWindow+" image3=[-- None --]");
+	run("MultiStackReg", "stack_1=[referenceFrameAttached] action_1=Align file_1=[]  stack_2=None action_2=Ignore file_2=[] transformation=[Translation]");
+	selectWindow("referenceFrameAttached");
+	run("Make Substack...", "delete slices=1");
+	selectWindow(referenceFrame);
+	run("Close");
+	selectWindow("Substack (1)");
+	rename(zFramesWindow);
+
+}
+
 //Get user input into where our working directory, and image storage directories, reside
 directories = getWorkingAndStorageDirectories();
 //[0] is input, [1] is output, [2] is done (working directories) [3] is directoryName (storage directory)
@@ -778,7 +861,7 @@ Housekeeping();
 //manually correct frames, and the string to ID morphology images
 inputs_array = getPreprocessingInputs();
 diffDetectorFrames = inputs_array[0];
-lapFrames = inputs_array[1];
+blurDetectorFrames = inputs_array[1];
 manCorrect = inputs_array[2];
 preProcStringToFind = inputs_array[3];
 
@@ -848,9 +931,6 @@ function autoDetectFramesToRemove(imagePath, timepoints, iniValues) {
 			framesPerPlane = iniValues[4];
 			numberOfZPlanes = iniValues[3];
 
-			numberOfFramesPerTimepoint = framesPerPlane * numberOfZPlanes;
-			blurResultsPerTimepoint = newArray(numberOfFramesPerTimepoint);
-
 			//Loop through all Z points in our image
 			for(zPlane=1; zPlane<(numberOfZPlanes + 1); zPlane++) {
 
@@ -860,14 +940,6 @@ function autoDetectFramesToRemove(imagePath, timepoints, iniValues) {
 
 				blurDetectorOutput = blurDetector(subName);
 
-				framesInTimepointBeforeNow = (zPlane - 1) * numberOfZPlanes;
-				//For each slice in the stack, store the maximum pixel value of the laplacian filtered slice in this
-				//timepoint's results
-				for(currFrame = 0; currFrame < blurDetectorOutput.length; currFrame++) {
-					currentFrameInTimepoint = currFrame + framesInTimepointBeforeNow;
-					blurResultsPerTimepoint[currentFrameInTimepoint] = blurDetectorOutput[currFrame];					
-				}
-	
 				//Cutoff routine
 					
 				//This cutoff routine takes the measured square differences of each 
@@ -875,34 +947,49 @@ function autoDetectFramesToRemove(imagePath, timepoints, iniValues) {
 				//the images (those with the lowest square differences). In this case we 
 				//select the FramesToKeep lowest images i.e. if we want to keep 5 frames 
 				//per TZ point, we keep the 5 lowest square difference frames per FZ.
-					
-				//Here we create an array that contains the intDenDiff values that 
-				//correspond to the substack we're currently processing
-				currentStackDiffs = Array.slice(intDenDiff, (i0*subSlices), (subSlices+(i0*subSlices)));
 		
 				//Here we rank the array twice, this is necessary to get the ranks of 
 				//the slices so that the highest sq diff value has the highest rank and 
 				//vice versa
-				IMTArrayCutoffRank1=Array.rankPositions(currentStackDiffs);
-				IMTArrayCutoffRank2=Array.rankPositions(IMTArrayCutoffRank1);
-									
-				//Here we compare the ranks to the frames to keep - if the rank is above 
-				//our number of frames to keep, i.e. worse ranked than our threshold, we 
-				//set the slice number to 0 in the array. This allows us to store only 
-				//the slice numbers of the slices we want to use
-				for (i1=0;i1<subSlices;i1++) {
-					//print(IMTArrayCutoffRank2[i1]);
-					//print(intDenDiff[i1]);
-					if (IMTArrayCutoffRank2[i1]<(IMTArrayCutoffRank2.length-lapFrames)) {
-						forLap[i1+(i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3])))] = 0;
+				preRankedOutput=Array.rankPositions(blurDetectorOutput);
+				rankedLapValues=Array.rankPositions(preRankedOutput);
+
+				//For each slice in the stack, store the maximum pixel value of the laplacian filtered slice in this
+				//timepoint's results
+				framesToKeep = getArrayOfImageSliceNumbers("/" + subName);
+				for(currFrame = 0; currFrame < framesPerPlane; currFrame++) {
+					currentFrameInTimepoint = currFrame + framesInTimepointBeforeNow;	
+					if (rankedLapValues[currFrame]<(rankedLapValues.length-blurDetectorFrames)) {
+						framesToKeep[currFrame] = 0;
 					}
-					//print(forLap[i1+(i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3])))]);
+			
 				}
 
-				//Here we create a new array that stores the slice numbers for the 
-				//substack we're currently working with
-				currentStackSlices = Array.slice(forLap, ((i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3])))), (subSlices+((i0*subSlices) + (k*(subSlices*(iniTextValuesMicrons[3]))))));
-			
+				referenceFrame = "zPlane" + zPlane
+				createReferenceFrame(framesToKeep, subName, referenceFrame);
+
+				registerToReferenceFrame(referenceFrame, subName);
+									
+				//Calculate the difference between the average projection and the stack
+				imageCalculator("Difference create stack", "toKeep", "T"+motionArtifactRemoval[2]+" Z"+motionArtifactRemoval[3]);
+				
+				//Measure the difference (mean grey value) for each slice - ideally all this code should be put into a function since it
+				//is a repeat of the laplacian frame selection from earlier
+				selectWindow("Result of toKeep");
+				keepSlices = nSlices;
+				diffArray = newArray(keepSlices);
+				for(currSlice = 1; currSlice < (keepSlices+1); currSlice++) {
+					setSlice(currSlice);
+					getRawStatistics(nPixels, mean, min, max, std, hist);
+					diffArray[currSlice-1]= mean;
+				}
+				selectWindow("Result of toKeep");
+				run("Close");
+				selectWindow("toKeep");
+				run("Close");
+				selectWindow("T"+motionArtifactRemoval[2]+" Z"+motionArtifactRemoval[3]);
+				run("Close");
+
 
 }
 

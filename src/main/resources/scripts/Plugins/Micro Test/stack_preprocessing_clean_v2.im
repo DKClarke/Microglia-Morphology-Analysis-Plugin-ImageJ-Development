@@ -919,6 +919,155 @@ function diffDetector(referenceFrame, subName) {
 
 }
 
+//Function to incorporate the reordering of Z slices in registration. Takes an 
+//inputImage, then rearranges slices that are maximally layersToTest apart 
+//before renaming it toRename
+function zSpaceCorrection(inputImage, layersToTest, toRename) {
+
+	//Array to store the name of output images from the spacing correction to 
+	//close
+	toClose = newArray("Warped", "Image", inputImage);
+
+	//Runs the z spacing correction plugin on the input image using the 
+	//layersToTest value as the maximum number of layers to check against for z 
+	//positioning
+	selectWindow(inputImage);
+	run("Z-Spacing Correction", "input=[] type=[Image Stack] text_maximally="+layersToTest+" outer_iterations=100 outer_regularization=0.40 inner_iterations=10 inner_regularization=0.10 allow_reordering number=1 visitor=lazy similarity_method=[NCC (aligned)] scale=1.000 voxel=1.0000 voxel_0=1.0000 voxel_1=1.0000 render voxel=1.0000 voxel_0=1.0000 voxel_1=1.0000 upsample=1");
+
+	closeImages(toClose);
+
+	//Renames the output image to the toRename variable
+	selectWindow("Z-Spacing: " + inputImage);
+	rename(toRename);
+
+	//Close the exception that is thrown by the rearranging of stacks
+	selectWindow("Exception");
+	run("Close");
+
+}
+
+function closeImages(toClose) {
+
+	//Closes any images that are in the toClose array first by getting a list of 
+	//the image titles that exist
+	imageTitleList = getList("image.titles");
+
+	//Then we loop through the titles of the images we want to close, each time 
+	//also looping through the images that are open
+	for(k = 0; k<toClose.length; k++) {
+		for(j=0; j<imageTitleList.length; j++) {
+			
+			//If the title of the currently selected open image matches the one we 
+			//want to close, then we close that image and terminate our search of the 
+			//current toClose title in our list of images and move onto the next 
+			//toClose title
+			if(indexOf(imageTitleList[j], toClose[k]) == 0) {
+				selectWindow(imageTitleList[j]);
+				run("Close");
+				j = imageTitleList.length;
+			}
+		}
+	}
+}
+
+function concatenateArrayOfImages(imageArray, collapsedName) {
+
+	arrayOfFormattedNames = newArray(imageArray.length);
+	for(currElement = 1; currElement < imageArray.length + 1; currElement++){
+		arrayOfFormattedNames[currElement-1] = "image" + currElement + "=" + imageArray[currElement-1];
+
+	}
+
+	forConcat = collapseArrayValuesIntoString(arrayOfFormattedNames, "");
+	run("Concatenate...", " title = ["+collapsedName+"] "+forConcat+"");
+
+
+}
+
+function formatTimepointStack(timepointStack, numberOfZPlanes, diffDetectorFrames) {
+
+	run("MultiStackReg", "stack_1="+timepointStack+" action_1=Align file_1=[] stack_2=None action_2=Ignore file_2[] transformation=[Translation]");
+	selectWindow(timepointStack);
+	run("8-bit");
+	
+	zSpaceCorrection(timepointStack, numberOfZPlanes, timepointStack);
+	selectWindow(timepointStack);
+	run("8-bit");
+	run("MultiStackReg", "stack_1="+timepointStack+" action_1=Align file_1=[] stack_2=None action_2=Ignore file_2[] transformation=[Affine]");
+	selectWindow(timepointStack);
+	run("8-bit");
+	print("Done");
+
+	//If we're only keeping a single frame (which means we won't have 
+	//average projected our image earlier function) then we median blur 
+	//our image 
+	if(diffDetectorFrames==1) {
+		selectWindow(timepointStack);
+		run("Median 3D...", "x=1 y=1 z=1");
+	}
+
+
+}
+
+function autoCreateCleanedFrame(iniValues, zPlane, renameAs, blurDetectorFrames, diffDetectorFrames) {
+
+	framesPerPlane = iniValues[4];
+
+	//Here we create substacks from our input image - one substack 
+	//corresponding to all the frames at one Z point
+	subName = makeZPlaneSubstack(iniValues, zPlane, renameAs);
+
+	blurDetectorOutput = blurDetector(subName);
+	
+	framesToKeepBlur =  setToZeroIfCutoff(blurDetectorOutput, framesPerPlane, blurDetectorFrames, "below");
+
+	referenceFrameBlur = "blurDetectZPlane" + zPlane
+	createReferenceFrame(framesToKeepBlur, subName, referenceFrameBlur);
+
+	registerToReferenceFrame(referenceFrameBlur, subName);
+
+	diffDetectorOutput = diffDetector(referenceFrameBlur, subName);	
+
+	framesToKeepDiff =  setToZeroIfCutoff(diffDetectorOutput, framesPerPlane, diffDetectorFrames, "above");
+	
+	referenceFrameDiff = "diffDetectZPlane" + zPlane
+	createReferenceFrame(framesToKeepDiff, subName, referenceFrameDiff);
+
+	selectWindow(subName);
+	run("Close");
+
+	return referenceFrameDiff;
+
+}
+
+function autoCreateCleanedTimepoint(renameAs, imagePath, currentTimepoint, iniValues, blurDetectorFrames, diffDetectorFrames) {
+
+	//Get out the current timepoint, split it into a stack for each frame (i.e. 14 stacks of 26 slices)
+	getTimepointStack(imagePath, currentTimepoint, renameAs);
+
+	numberOfZPlanes = iniValues[3];
+
+	finalZFrameImages = newArray(numberOfZPlanes);
+	//Loop through all Z points in our image
+	for(zPlane=1; zPlane<(numberOfZPlanes + 1); zPlane++) {
+
+		cleanedZFrame = autoCreateCleanedFrame(iniValues, zPlane, renameAs, blurDetectorFrames, diffDetectorFrames);
+		finalZFrameImages[zPlane-1] = cleanedZFrame;
+
+	}
+
+	timepointStack = "timepoint" + currentTimepoint;
+	concateArrayOfImages(finalZFrameImages, timepointStack);
+
+	formatTimepointStack(timepointStack, numberOfZPlanes, diffDetectorFrames);
+
+	selectWindow(renameAs);
+	run("Close");
+
+	return timepointStack;
+
+}
+
 //Get user input into where our working directory, and image storage directories, reside
 directories = getWorkingAndStorageDirectories();
 //[0] is input, [1] is output, [2] is done (working directories) [3] is directoryName (storage directory)
@@ -988,48 +1137,22 @@ for(currImage = 0; currImage<imagesToProcessArray.length; currImage++) {
 	stackContrastAdjustExpandCanvas(imagesToProcessArray[currImage]);
 }
 
-function autoDetectFramesToRemove(imagePath, timepoints, iniValues) {
-
-		//Generate imageNumberArray as all the slices in the image, and copy this to a forLap object
-		//which we use to select frames for our laplacian average
-		selectWindow(File.getName(imagePath));
-		maxValue = nSlices;
-		imageNumberArray = getArrayOneToMaxValue(maxValue);
+function autoCreateCleanedStack(imagePath, timepoints, iniValues, blurDetectorFrames, diffDetectorFrames) {
 
 		//Reorder each individual timepoint stack in Z so that any out of position slices are positioned correctly for motion artifact detection and removal
 		//Go through each timepoint
+		finalTimepointImages = newArray(timepoints);
 		for(currentTimepoint = 1; currentTimepoint < timepoints+1; currentTimepoint++) {
 
 			renameAs = "Timepoint";
-			//Get out the current timepoint, split it into a stack for each frame (i.e. 14 stacks of 26 slices)
-			getTimepointStack(imagePath, currentTimepoint, renameAs);
 
-			framesPerPlane = iniValues[4];
-			numberOfZPlanes = iniValues[3];
+			timepointStack = autoCreateCleanedTimepoint(renameAs, imagePath, currentTimepoint, iniValues, blurDetectorFrames, diffDetectorFrames);
+			finalTimepointImages[currentTimepoint-1] = timepointStack;
 
-			//Loop through all Z points in our image
-			for(zPlane=1; zPlane<(numberOfZPlanes + 1); zPlane++) {
+		}
 
-				//Here we create substacks from our input image - one substack 
-				//corresponding to all the frames at one Z point
-				subName = makeZPlaneSubstack(iniValues, zPlane, renameAs);
-
-				blurDetectorOutput = blurDetector(subName);
-				
-				framesToKeepBlur =  setToZeroIfCutoff(blurDetectorOutput, framesPerPlane, blurDetectorFrames, "below");
-
-				referenceFrame = "blurDetectZPlane" + zPlane
-				createReferenceFrame(framesToKeepBlur, subName, referenceFrame);
-
-				registerToReferenceFrame(referenceFrame, subName);
-
-				diffDetectorOutput = diffDetector(referenceFrame, subName);	
-				
-				referenceFrame = "diffDetectZPlane" + zPlane
-				createReferenceFrame(framesToKeepBlur, subName, referenceFrame);
-
-				selectWindow(subName);
-				run("Close");
+		finalStack = "outputStack";
+		concateArrayOfImages(finalTimepointImages, finalStack);
 
 
 	

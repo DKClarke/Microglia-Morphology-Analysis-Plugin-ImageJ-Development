@@ -428,15 +428,13 @@ function formatManualSelectionImage(imagePath, timepoints) {
 
 }
 
-function getArrayOfImageSliceNumbers(imagePath) {
+function getArrayOneToMaxValue(maxValue) {
 
     //This makes an array with which is the length of the number of
 	//Z we have per timepoint times the number of frames per Z (i.e., every slice in the stack)
 	//We do this +1, then slice it, so that we get an array of the same length as our stack, starting
 	//at a value of 1
-	selectWindow(File.getName(imagePath));
-	slices = nSlices;
-    imageNumberArray = Array.getSequence(slices+1); 
+    imageNumberArray = Array.getSequence(maxValue+1); 
     imageNumberArray = Array.slice(imageNumberArray, 1, imageNumberArray.length); 
 
 
@@ -613,8 +611,10 @@ function manualFrameSelection(directories, manualFlaggedImages, iniValues, frame
 			//Format the image for manual selection
 			formatManualSelectionImage(toOpen, timepoints);
 
+			selectWindow(File.getName(toOpen));
+			maxValue = nSlices;
 			//Get an array where each element represents a slice of the stack
-			arrayOfAllSlices = getArrayOfImageSliceNumbers(toOpen);
+			arrayOfAllSlices = getArrayOneToMaxValue(maxValue);
 
 			//Reorder each individual timepoint stack in Z so that any out of position slices are positioned correctly 
 			//for motion artifact detection and removal
@@ -741,14 +741,9 @@ function blurDetector(zPlaneWindow){
 	rename(zPlaneWindow);
 	imageSlices = nSlices;
 
-	outputArray = newArray(imageSlices);
-		
 	//For each slice in the stack, store the maximum pixel value of the laplacian filtered slice
-	for(currSlice = 1; currSlice < (imageSlices+1); currSlice++) {
-		setSlice(currSlice);
-		getRawStatistics(nPixels, mean, min, max, std, hist);
-		outputArray[currSlice-1] = max;
-	}
+	diffArrayAll = getSliceStatistics(zPlaneWindow);
+	maxArray = Array.slice(diffArrayAll, diffArrayAll.length/2);
 
 	//Close the laplacian filtered image
 	selectWindow(zPlaneWindow);
@@ -757,7 +752,7 @@ function blurDetector(zPlaneWindow){
 	selectWindow("toKeep");
 	rename(zPlaneWindow);
 
-	return outputArray
+	return maxArray
 
 }
 
@@ -838,10 +833,89 @@ function registerToReferenceFrame(referenceFrame, zFramesWindow){
 	run("MultiStackReg", "stack_1=[referenceFrameAttached] action_1=Align file_1=[]  stack_2=None action_2=Ignore file_2=[] transformation=[Translation]");
 	selectWindow("referenceFrameAttached");
 	run("Make Substack...", "delete slices=1");
-	selectWindow(referenceFrame);
-	run("Close");
 	selectWindow("Substack (1)");
 	rename(zFramesWindow);
+
+}
+
+function getSliceStatistics(imageName) {
+
+	selectWindow(imageName);
+
+	outputArray = newArray(nSlices * 2);
+
+	for(currMetric = 0; currMetric < 2; currMetric++) {
+		for(currSlice = 1; currSlice < (nSlices+1); currSlice++) {
+			setSlice(currSlice);
+			getRawStatistics(nPixels, mean, min, max, std, hist);
+			if(currMetric == 0) {
+				outputArray[currSlice-1] = mean;
+			} else if (currMetric == 1) {
+				outputArray[(currSlice-1) + nSlices] = max;
+			}
+		}
+	}
+
+	return outputArray;
+
+}
+
+function setToZeroIfCutoff(inputArray, framesPerPlane, rankCutoff, direction) {
+	//Cutoff routine
+		
+	//This cutoff routine takes the measured square differences of each 
+	//slice, and ranks them highest to lowest. We then select the best of 
+	//the images (those with the lowest square differences). In this case we 
+	//select the FramesToKeep lowest images i.e. if we want to keep 5 frames 
+	//per TZ point, we keep the 5 lowest square difference frames per FZ.
+
+	//Here we rank the array twice, this is necessary to get the ranks of 
+	//the slices so that the highest sq diff value has the highest rank and 
+	//vice versa
+	preRankedOutput=Array.rankPositions(inputArray);
+	rankedArray=Array.rankPositions(preRankedOutput);
+
+	//For each slice in the stack, store the maximum pixel value of the laplacian filtered slice in this
+	//timepoint's results
+	framesToKeep = getArrayOneToMaxValue(framesPerPlane);
+	for(currFrame = 0; currFrame < framesPerPlane; currFrame++) {	
+		if(direction == 'below'){
+			if (rankedArray[currFrame]<(rankedArray.length-rankCutoff)) {
+				framesToKeep[currFrame] = 0;
+			}
+		} else if(direction == 'above') {
+			if (rankedArray[currFrame] > rankCutoff-1) {
+				framesToKeep[currFrame] = 0;
+			}
+		} else {
+			exit("Direction argument in setToZeroIfCutoff() not specified correctly")
+		}
+	}
+
+	return framesToKeep;
+
+
+}
+
+function diffDetector(referenceFrame, subName) {
+
+	//Calculate the difference between the average projection and the stack
+	imageCalculator("Difference create stack", subName, referenceFrame);
+	
+	//Measure the difference (mean grey value) for each slice - ideally all this code should be put into a function since it
+	//is a repeat of the laplacian frame selection from earlier
+	diffArrayAll = getSliceStatistics("Result of " + subName);
+	meanArray = Array.slice(diffArrayAll, 0, (diffArrayAll.length/2));
+
+	framesToKeepDiff =  setToZeroIfCutoff(meanArray, framesPerPlane, diffDetectorFrames, "above");
+
+	selectWindow("Result of " + subName);
+	run("Close");
+
+	selectWindow(referenceFrame);
+	run("Close");
+
+	return framesToKeepDiff;
 
 }
 
@@ -918,7 +992,9 @@ function autoDetectFramesToRemove(imagePath, timepoints, iniValues) {
 
 		//Generate imageNumberArray as all the slices in the image, and copy this to a forLap object
 		//which we use to select frames for our laplacian average
-		imageNumberArray = getArrayOfImageSliceNumbers(imagePath);
+		selectWindow(File.getName(imagePath));
+		maxValue = nSlices;
+		imageNumberArray = getArrayOneToMaxValue(maxValue);
 
 		//Reorder each individual timepoint stack in Z so that any out of position slices are positioned correctly for motion artifact detection and removal
 		//Go through each timepoint
@@ -939,56 +1015,24 @@ function autoDetectFramesToRemove(imagePath, timepoints, iniValues) {
 				subName = makeZPlaneSubstack(iniValues, zPlane, renameAs);
 
 				blurDetectorOutput = blurDetector(subName);
+				
+				framesToKeepBlur =  setToZeroIfCutoff(blurDetectorOutput, framesPerPlane, blurDetectorFrames, "below");
 
-				//Cutoff routine
-					
-				//This cutoff routine takes the measured square differences of each 
-				//slice, and ranks them highest to lowest. We then select the best of 
-				//the images (those with the lowest square differences). In this case we 
-				//select the FramesToKeep lowest images i.e. if we want to keep 5 frames 
-				//per TZ point, we keep the 5 lowest square difference frames per FZ.
-		
-				//Here we rank the array twice, this is necessary to get the ranks of 
-				//the slices so that the highest sq diff value has the highest rank and 
-				//vice versa
-				preRankedOutput=Array.rankPositions(blurDetectorOutput);
-				rankedLapValues=Array.rankPositions(preRankedOutput);
-
-				//For each slice in the stack, store the maximum pixel value of the laplacian filtered slice in this
-				//timepoint's results
-				framesToKeep = getArrayOfImageSliceNumbers("/" + subName);
-				for(currFrame = 0; currFrame < framesPerPlane; currFrame++) {
-					currentFrameInTimepoint = currFrame + framesInTimepointBeforeNow;	
-					if (rankedLapValues[currFrame]<(rankedLapValues.length-blurDetectorFrames)) {
-						framesToKeep[currFrame] = 0;
-					}
-			
-				}
-
-				referenceFrame = "zPlane" + zPlane
-				createReferenceFrame(framesToKeep, subName, referenceFrame);
+				referenceFrame = "blurDetectZPlane" + zPlane
+				createReferenceFrame(framesToKeepBlur, subName, referenceFrame);
 
 				registerToReferenceFrame(referenceFrame, subName);
-									
-				//Calculate the difference between the average projection and the stack
-				imageCalculator("Difference create stack", "toKeep", "T"+motionArtifactRemoval[2]+" Z"+motionArtifactRemoval[3]);
+
+				diffDetectorOutput = diffDetector(referenceFrame, subName);	
 				
-				//Measure the difference (mean grey value) for each slice - ideally all this code should be put into a function since it
-				//is a repeat of the laplacian frame selection from earlier
-				selectWindow("Result of toKeep");
-				keepSlices = nSlices;
-				diffArray = newArray(keepSlices);
-				for(currSlice = 1; currSlice < (keepSlices+1); currSlice++) {
-					setSlice(currSlice);
-					getRawStatistics(nPixels, mean, min, max, std, hist);
-					diffArray[currSlice-1]= mean;
-				}
-				selectWindow("Result of toKeep");
+				referenceFrame = "diffDetectZPlane" + zPlane
+				createReferenceFrame(framesToKeepBlur, subName, referenceFrame);
+
+				selectWindow(subName);
 				run("Close");
-				selectWindow("toKeep");
-				run("Close");
-				selectWindow("T"+motionArtifactRemoval[2]+" Z"+motionArtifactRemoval[3]);
-				run("Close");
+
+
+	
 
 
 }

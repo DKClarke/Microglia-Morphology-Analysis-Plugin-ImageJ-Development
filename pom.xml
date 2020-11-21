@@ -12,8 +12,8 @@
 		<relativePath />
 	</parent>
 
-	<artifactId>example-script-collection</artifactId>
-	<version>0.1.0-SNAPSHOT</version>
+	<artifactId>microglia-morphology-analysis</artifactId>
+	<version>0.1.0</version>
 
 	<name>Script Collection</name>
 	<description>A Maven project collecting ImageJ scripts.</description>
@@ -109,4 +109,18 @@
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
+
+	<build>
+		<plugins>
+			<!-- we want JDK 1.6 source and binary compatiblility -->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<configuration>
+					<source>1.8</source>
+					<target>1.8</target>
+				</configuration>
+			</plugin>
+		</plugins>
+	</build>
 </project>

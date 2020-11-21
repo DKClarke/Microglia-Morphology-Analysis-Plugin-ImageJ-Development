@@ -1,0 +1,16 @@
+<settings>
+  [...]
+  <profiles>
+    [...]
+    <profile>
+      <id>compiler</id>
+        <properties>
+          <JAVA_HOME>/Library/Java/JavaVirtualMachines/jdk1.8.0_271.jdk</JAVA_HOME>
+        </properties>
+    </profile>
+  </profiles>
+  [...]
+  <activeProfiles>
+    <activeProfile>compiler</activeProfile>
+  </activeProfiles>
+</settings>

@@ -1,0 +1,247 @@
+//If the user has chosen to select images to analyse
+if(analysisSelections[1] == 1) {
+
+	//Array to store variables for use in generating the Images to Use.csv file
+	variableArray = newArray(3);	
+	variableArray[1] = 0;
+	//Indexes: how many images the user wants on the screen at once, how many images we've added to our imagesToUse array, and an index of how many images we've
+	//added to our final output array
+	
+	variableArray[0] = onScreen;
+
+	//Create an array to fill with locations of images that match the max substring (max projections of processed images) and fill it
+	fileLocations=newArray(1);
+	forChecking = directories[1];
+	outputMaxFiles = listFilesAndFilesSubDirectories(forChecking, "processed", fileLocations);
+
+	//An array storing the column names that we'll use in our results file
+	valuesToRecord = newArray("Image List", "Kept", "Manual Flag", "Ignore");
+
+	//If the images to use table isn't open, we create it
+	if(isOpen("Images to Use")==0) {
+		Table.create("Images to Use");
+	} else {
+		Table.reset("Images to Use"");
+	}
+					                        
+	//TableValues is an array we'll fill with the values from any existing cell position marking table for this image
+	analysisRecordInput = newArray(outputMaxFiles.length*valuesToRecord.length);
+					
+	//TableResultsRefs is an array of the location where we would find any previuosly existing table, repeated for each column
+	TableResultsRefs = newArray(directories[1] + "Images to Use.csv", directories[1] + "Images to Use.csv", 
+		directories[1] + "Images to Use.csv", directories[1] + "Images to Use.csv");
+						
+	//This tells the function whether the results we're getting are strings
+	TableResultsAreStrings = newArray(true, false, false, false);
+					
+	//Run the fillArray function to fill analysisRecordInput
+	fillArray(analysisRecordInput, TableResultsRefs, valuesToRecord, TableResultsAreStrings, true);
+
+	//File the table with previous data
+	selectWindow("Images to Use");
+	for(i0=0; i0<(analysisRecordInput.length / valuesToRecord.length); i0++) {
+		for(i1=0; i1<valuesToRecord.length; i1++) {
+			if(i1 == 0) {
+				stringValue = analysisRecordInput[((analysisRecordInput.length / valuesToRecord.length)*i1)+i0];
+				Table.set(valuesToRecord[i1], i0, stringValue);
+			}
+			Table.set(valuesToRecord[i1], i0, analysisRecordInput[((analysisRecordInput.length / valuesToRecord.length)*i1)+i0]);
+		}
+	}
+	// Seems to fix issue where kept column wasn't updating
+	Table.update;
+	setBatchMode("exit and display");
+	waitForUser("Check table is correctly populated");
+	setBatchMode(true);
+
+	//Opened is a variable that counts how many images we've opened
+	opened = 0;
+
+	//Indices is an array that we fill with the location of the images within the file list of the output folder
+	indices = newArray(0);
+
+	//Loop through the list of files that have max in their name - start i at 1 so we can use it as a counter of how many images we've opened
+	for(i=0; i<outputMaxFiles.length; i++) {
+
+		//Here we go through each row of the results table and check if we already have data for the current max image, where if we do
+		//we get out whether the image was analysed already - also create a variable to store whether this image is in our table or not
+		checkImage = true;
+		selectWindow("Images to Use");
+		//selectWindow("Hippo Image Check");
+		match = false;
+		print(outputMaxFiles[i]);
+		
+		for(currRow = 0; currRow < Table.size; currRow++) {
+
+			if(Table.get("Image List", currRow)!= 0) {
+				if(indexOf(toLowerCase(File.getParent(outputMaxFiles[i])), toLowerCase(Table.getString("Image List", currRow))) > -1) {
+					match = true;
+					if(File.exists(File.getParent(outputMaxFiles[i]) + "/TCS Status.csv")==1) {
+						Table.set("Kept", currRow, 1);
+						print("Already thresholded image");
+					}
+					if(Table.get("Kept", currRow)==1 || Table.get("Ignore", currRow)==1) {
+						checkImage = false;
+						print("Already kept or ignored image");
+					}
+					fileName = Table.getString("Image List", currRow);
+					if(Table.get("Manual Flag", currRow)==1 && File.exists(directories[0] + fileName + ".tif")) {
+						checkImage = false;
+					}
+					currRow = 1e99;
+				}
+			}
+		}
+
+		//If we couldn't find our image in the table
+		if(match == false) {
+			print("Not found");
+		
+			//Set kept and analysed to 0
+			kept = 0;
+
+			//Though if it isn't in the table but has been thresholded, we set kept and
+			//analysed to 1
+			if(File.exists(File.getParent(outputMaxFiles[i]) + "/TCS Status.csv")==1) {
+				print("Setting kept for thresholded image to 1");
+				kept = 1;
+				checkImage = false;
+			}
+
+			//Update and save our table
+			selectWindow("Images to Use");
+			currentImage = substring(File.getName(outputMaxFiles[i]), 0, indexOf(File.getName(outputMaxFiles[i]), " processed"));
+			Table.set("Image List", i, currentImage);
+			Table.set("Kept", i, kept);
+			Table.update;
+			Table.save(directories[1]+"Images to Use.csv");
+
+			TableName = Table.title;
+			//Since we save it every time, we have to rename it to get rid of the .csv 
+			if(TableName != "Images to Use") {
+				Table.rename(TableName, "Images to Use");
+			}
+			
+		}
+
+		//If we haven't analysed the current image
+		if(checkImage == true) {
+		
+			//Open each image
+			open(outputMaxFiles[i]);
+			rename("curr");
+			run("Duplicate...", "duplicate");
+			selectWindow("curr");
+			run("Close");
+			selectWindow("curr-1");
+			rename(substring(File.getName(outputMaxFiles[i]), 0, indexOf(File.getName(outputMaxFiles[i]), " processed")));
+			print(outputMaxFiles[i]);
+			print("Curr index", i);
+
+			//Store the index of the image in indices, and add one to the opened variable
+			storeIndex = newArray(1);
+			storeIndex[0] = i;
+			indices = Array.concat(indices, storeIndex);
+			opened++;
+
+		}
+
+		//If we've opened enough images to satisfy our image limit value, we print that we've hit the limit
+		if(opened != 0 && opened%variableArray[0]==0) {
+			print("Hit the limit");
+		//Otherwise if we're on our final opened image and we don't have enough images open to reach the limit, we print as such
+		} else if (i==(outputMaxFiles.length-1) && nImages < variableArray[0]) {
+			print("Reached end of the directory and not enough images to reach limit");
+		}
+
+		//If we've hit our limit or we're done opening images
+		if((opened!= 0 && opened%variableArray[0]==0) || (i==(outputMaxFiles.length-1) && nImages < variableArray[0] && opened!=0)) {
+			
+			setOption("AutoContrast", true);
+			//We get a list of all their titles
+			allImages = getList("image.titles");
+			imagesKept = newArray(allImages.length);
+			manualFlag = newArray(allImages.length);
+			ignore = newArray(allImages.length);
+			
+			//We tile all the open images, display them to the user, and ask the user to close the ones that don't pass QA
+			setBatchMode("Exit and Display");
+			run("Tile");
+			waitForUser("Close the images that aren't good enough in terms of registration for analysis then press ok");
+			openImages = getList("image.titles");
+			
+			//We loop through the titles of the open images and check within the outputMaxFiles array (all the files with max in the name)
+			//to find the images location, and we set the imagesToUse array value at that location to 1 (from 0) to indicate that the associated
+			//images in outputMaxFiles is one we want to use
+			for(i0=0; i0<allImages.length; i0++) {
+				for(i1=0; i1<openImages.length; i1++) {
+					if(indexOf(toLowerCase(allImages[i0]), toLowerCase(openImages[i1]))>-1) {
+						imagesKept[i0] = 1;
+						i1 = 1e20;
+							
+						//We increase our variableArray[1] value to keep track of how many images we've added to our imagesToUse array 
+						variableArray[1]++;
+					}
+
+				}
+
+				//If we're not keeping this image
+				if(imagesKept[i0] == 0) {
+					fileName = allImages[i0];
+					
+					//If this image has a manual registration frame selection file and is in our done folder, this means we've manually
+					//registered it and still don't want it so set ignore to 1
+					if(File.exists(directories[1] + fileName + "/Slices To Use.csv")==1 && File.exists(directories[2] + fileName + ".tif")==1) {
+						ignore[i0] = 1;
+
+						//Else, if this image doesn't have a manual registration frame selection file, we flag it for manual analysis and move
+						//the image from the done folder to the input folder
+						} else if(File.exists(File.getParent(fileName) + "/Slices To Use.csv")==0) {
+							manualFlag[i0] = 1;
+							if(File.exists(directories[0] + fileName + ".tif")==0) {
+								print(directories[2] + fileName + ".tif");
+								wasMoved = File.rename(directories[2]+fileName + ".tif", directories[0]+fileName + ".tif");
+								if(wasMoved == 0) {
+									waitForUser("Issue with moving image");
+								} else {
+									print("moved");
+								}
+							}
+						}
+					}
+				}
+
+				//We close all the open images after editing the imagesToUse array
+				if(nImages>0) {
+					run("Close All");
+				}
+			
+			//Update our results table with the names of the images we've checked, as well as their keep value
+			selectWindow("Images to Use");
+			for(indexLoop =0; indexLoop < indices.length; indexLoop++) {
+
+				//Update array contains the index to update, the name of the image, whether it was kept, manually flagged, or
+				//ignored, these are then set in the table
+				updateArray = newArray(indices[indexLoop], 
+					substring(File.getName(outputMaxFiles[i]), 0, indexOf(File.getName(outputMaxFiles[i]), " processed")),
+					imagesKept[indexLoop],manualFlag[indexLoop], ignore[indexLoop]);
+				for(currVal = 0; currVal < valuesToRecord.length; currVal++) {
+					Table.set(valuesToRecord[currVal], updateArray[0], updateArray[(currVal+1)]);
+				}
+				Table.update;
+				Table.save(directories[1] + "Images to Use.csv");
+			}
+
+			TableName = Table.title;
+			//Since we save it every time, we have to rename it to get rid of the .csv 
+			if(TableName != "Images to Use") {
+				Table.rename(TableName, "Images to Use");
+			}
+
+			//Reset opened to 0 and reset indices to be a blank array
+			opened = 0;
+			indices = newArray(0);
+					
+		}
+	}
+}

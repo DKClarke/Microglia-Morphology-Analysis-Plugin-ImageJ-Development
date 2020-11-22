@@ -1,3 +1,18 @@
+//Get user input into where our working directory, and image storage directories, reside
+directories = getWorkingAndStorageDirectories();
+//[0] is input, [1] is output, [2] is done (working directories) [3] is directoryName (storage directory)
+
+processedStacks = listFilesAndFilesSubDirectories(directories[1], "processed");
+
+tableLoc = directories[1] + "Images to Use.csv";
+
+imageList = getTableColumn(tableLoc, "Image List");
+keptList = getTableColumn(tableLoc, "Kept");
+manualFlag = getTableColumn(tableLoc, "Manual Flag");
+ignoreList = getTableColumn(tableLoc, "Ignore");
+
+
+
 //If the user has chosen to select images to analyse
 if(analysisSelections[1] == 1) {
 
@@ -21,7 +36,7 @@ if(analysisSelections[1] == 1) {
 	if(isOpen("Images to Use")==0) {
 		Table.create("Images to Use");
 	} else {
-		Table.reset("Images to Use"");
+		Table.reset("Images to Use");
 	}
 					                        
 	//TableValues is an array we'll fill with the values from any existing cell position marking table for this image

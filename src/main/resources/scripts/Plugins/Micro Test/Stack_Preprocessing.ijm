@@ -330,16 +330,13 @@ function getManualFlaggedImages(manualFlagTable) {
 
 		print("Retrieving image IDs to manually select frames for");
 
-		//Open the table
-		open(manualFlagTable);
-		tableName = Table.title;
-		selectWindow(tableName);
+		//Retrieve columns from table
+		manualFlag = getTableColumn(manualFlagTable, "Manual Flag");
+		imageName = getTableColumn(manualFlagTable, "Image List");
+		ignoreFlag = getTableColumn(manualFlagTable, "Ignore");
 
 		//If an image has a manual flag or is set to be ignored, 
 		//flag it's image List values with a 0 then remove
-		manualFlag = Table.getColumn("Manual Flag");
-		imageName = Table.getColumn("Image List");
-		ignoreFlag = Table.getColumn("Ignore");
 		for(currImage = 0; currImage<manualFlag.length; currImage++) {
 			if(manualFlag[currImage]==0 || ignoreFlag[currImage] == 1) {
 				imageName[currImage] = 0;
@@ -355,9 +352,6 @@ function getManualFlaggedImages(manualFlagTable) {
 		} else {
 			proceed = false;
 		}
-
-		selectWindow(tableName);
-		run("Close");
 
 	} 
 	
@@ -399,7 +393,6 @@ function openAndGetImageTimepoints(imagePath, calibrationValues, appendWith) {
     //the animal only at [2] and finally the file name without the .tif on the end
     //that we store at [3]
     imageNames = getAnimalTimepointInfo(imagePath, appendWith);
-    print("Preprocessing ", imageNames[0]); 
     print(imageNames[3] + " opened");
 
 	//Calculate the number of timepoints in the image by multiplying frames per plane * number of plans, and divide
@@ -488,7 +481,6 @@ function selectFramesManually(noFramesToSelect, imageName) {
     }
 
 	setOption("AutoContrast", false);
-	outputArray = removeZeros(framesToKeep);
 
     return outputArray;
 }
@@ -632,18 +624,23 @@ function manualFrameSelection(directories, manualFlaggedImages, iniValues, frame
 
 }
 
-function manualFrameSelectionWrapper(directories, manualFlaggedImages, iniValues, framesToKeep, appendWith) {
+function manualFrameSelectionWrapper(directories, manualFlaggedImages, iniValues, framesToKeep, appendWith, manCorrect) {
 	
 	//If the user wants to manually select frames, and we have images eligibile for this (i.e. not being ignored from analysis or
 	//already manually frames chosen
-	if(manualFlaggedImages[0] != 'false') {
+	if(manualFlaggedImages[0] != 'false' && manCorrect == 1) {
 
 			print('Beginning manual frame selection');
 			manualFrameSelection(directories, manualFlaggedImages, iniValues, framesToKeep, appendWith);
 
-	} else {
+	} else if(manualFlaggedImages[0] == 'false') {
 
 		print('No images to manually choose frames for');
+		
+	} else if(manCorrect == 0) {
+
+		print('User has not chosen to manually select frames');
+		
 	}
 
 }
@@ -669,10 +666,9 @@ function imagesToProcess(manualFlaggedImages, directories) {
 		return imagesToProcessArray;
 }
 
-function stackContrastAdjustExpandCanvas(imageName){
+function stackContrastAdjust(imageName) {
 
-	//Adjust the contrast in the stack to normalise it across all Z depths and
-	//timepoints
+	//Adjust the contrast in the stack to normalise it across all Z depths and timepoints
 	print("Adjusting Contrast Across Entire Stack");
 	selectWindow(imageName);
 	run("8-bit");
@@ -685,17 +681,17 @@ function stackContrastAdjustExpandCanvas(imageName){
 	rename(imageName);
 	run("8-bit");
 
+}
+
+function expandCanvas(imageName) {
+
 	//Increase the canvas size of the image by 100 pixels in x and y so that 
 	//when we run registration on the image, if the image drifts we don't lose
 	//any of it over the edges of the canvas
+	selectWindow(imageName);
 	print("Expanding Image Canvas");
 	getDimensions(width, height, channels, slices, frames);
 	run("Canvas Size...", "width="+(width+500)+" height="+(height+500)+" position=Center zero");
-
-	//save image back to source as this updated version
-
-	//Start motion artifact removal here
-	print("Starting motion artifact removal");
 
 }
 
@@ -772,6 +768,28 @@ function collapseArrayValuesIntoString(array, collapseCharacter) {
 	return strung;
 }
 
+function makeSubstackOfSlices(windowName, renameTo, sliceArray) {
+
+	//This loop strings together the names stored in the arrayIn into a 
+	//concatenated string (called strung) that can be input into the substack 
+	//maker function so that we can make a substack of all kept TZ slices in
+	//a single go - we input the imageNumberArrayCutoff array
+	strung= collapseArrayValuesIntoString(sliceArray, ",");
+
+	selectWindow(windowName);	
+	run("Make Substack...", "slices=["+strung+"]");
+	rename(renameTo);
+
+}
+
+function registerReferenceFrame(windowName) {
+
+	run("MultiStackReg", "stack_1=["+windowName+"] action_1=Align file_1=[]  stack_2=None action_2=Ignore file_2=[] transformation=[Translation]");
+	run("MultiStackReg", "stack_1=["+windowName+"] action_1=Align file_1=[]  stack_2=None action_2=Ignore file_2=[] transformation=[Affine]");
+
+
+}
+
 //Part of motion processing, takes an array (currentStackSlices), removes zeros from it, then
 //creates a string of the numbers in the array before then making a substack of these slices
 //from an imagesInput[i] window, registering them if necessary, before renaming them
@@ -781,19 +799,9 @@ function createReferenceFrame(framesFlaggedForRetention, currentSubstackWindowNa
 	//Here we order then cutoff the zeros so we get a small array of the 
 	//slices to be retained
 	framesToRetain=removeZeros(framesFlaggedForRetention);
-					
-	//This loop strings together the names stored in the arrayIn into a 
-	//concatenated string (called strung) that can be input into the substack 
-	//maker function so that we can make a substack of all kept TZ slices in
-	//a single go - we input the imageNumberArrayCutoff array
-	strung= collapseArrayValuesIntoString(framesToRetain, ",");
 
-	//We then make a substack of our input image of the slices we're keeping 
-	//for this particular ZT point
-	print("Creating Reference Frame");
-	selectWindow(currentSubstackWindowName);	
-	run("Make Substack...", "slices=["+strung+"]");
-	rename(renameTo);
+	makeSubstackOfSlices(currentSubstackWindowName, renameTo, framesToRetain);
+					
 	selectWindow(renameTo);
 	newSlices = nSlices;
 		
@@ -802,8 +810,7 @@ function createReferenceFrame(framesFlaggedForRetention, currentSubstackWindowNa
 	if(newSlices>1){
 						
 		print("Registering ", currentSubstackWindowName);
-		run("MultiStackReg", "stack_1=["+renameTo+"] action_1=Align file_1=[]  stack_2=None action_2=Ignore file_2=[] transformation=[Translation]");
-		run("MultiStackReg", "stack_1=["+renameTo+"] action_1=Align file_1=[]  stack_2=None action_2=Ignore file_2=[] transformation=[Affine]");
+		registerReferenceFrame(renameTo);
 						
 		selectWindow(renameTo);
 		run("Z Project...", "projection=[Average Intensity]");
@@ -811,6 +818,7 @@ function createReferenceFrame(framesFlaggedForRetention, currentSubstackWindowNa
 		run("Close");
 		selectWindow("AVG_" + renameTo);
 		rename(renameTo);
+
 	} else {
 		print("Only one frame retained, no registration or averaging being applied");
 	}
@@ -1012,9 +1020,23 @@ function formatTimepointStack(timepointStack, numberOfZPlanes, diffDetectorFrame
 
 }
 
-function autoCreateCleanedFrame(iniValues, zPlane, renameAs, blurDetectorFrames, diffDetectorFrames) {
+function manualCreateCleanedFrame(framesPerPlane, zPlane, renameAs, manuallyChosenFrames) {
 
-	framesPerPlane = iniValues[4];
+	//Here we create substacks from our input image - one substack 
+	//corresponding to all the frames at one Z point
+	subName = makeZPlaneSubstack(framesPerPlane, zPlane, renameAs);
+
+	referenceFrameDiff = "diffDetectZPlane" + zPlane;
+	createReferenceFrame(manuallyChosenFrames, subName, referenceFrameDiff);
+	
+	selectWindow(subName);
+	run("Close");
+
+	return referenceFrameDiff;
+
+}
+
+function autoCreateCleanedFrame(framesPerPlane, zPlane, renameAs, blurDetectorFrames, diffDetectorFrames) {
 
 	//Here we create substacks from our input image - one substack 
 	//corresponding to all the frames at one Z point
@@ -1055,18 +1077,31 @@ function getTimepointStack(imagePath, currentTimepoint, renameAs) {
 }
 
 
-function autoCreateCleanedTimepoint(renameAs, imagePath, currentTimepoint, iniValues, blurDetectorFrames, diffDetectorFrames) {
+function createCleanedTimepoint(renameAs, imagePath, currentTimepoint, iniValues, blurDetectorFrames, diffDetectorFrames, manuallyChosenFrames) {
 
 	//Get out the current timepoint, split it into a stack for each frame (i.e. 14 stacks of 26 slices)
 	getTimepointStack(imagePath, currentTimepoint, renameAs);
 
 	numberOfZPlanes = iniValues[3];
+	framesPerPlane = iniValues[4];
 
 	finalZFrameImages = newArray(numberOfZPlanes);
 	//Loop through all Z points in our image
 	for(zPlane=1; zPlane<(numberOfZPlanes + 1); zPlane++) {
 
-		cleanedZFrame = autoCreateCleanedFrame(iniValues, zPlane, renameAs, blurDetectorFrames, diffDetectorFrames);
+		if(manuallyChosenFrames[0] == 'false') {
+			cleanedZFrame = autoCreateCleanedFrame(framesPerPlane, zPlane, renameAs, blurDetectorFrames, diffDetectorFrames);
+		} else {
+			manualFramesThisZ = Array.slice(manuallyChosenFrames, (zPlane - 1) * framesPerPlane, framesPerPlane * zPlane);
+			keptFrames = removeZeros(manualFramesThisZ).length;
+			if(keptFrames != diffDetectorFrames) {
+				print("Manually retained frames per Z: ", keptFrames);
+				print("Number of frames chosen to average over: ", diffDetectorFrames);
+				exit("Number of frames chosen manually doesn't equal number of frames chosen to average over in this run. See log for info");
+			}
+			cleanedZFrame =  manualCreateCleanedFrame(framesPerPlane, zPlane, renameAs, manualFramesThisZ);
+		}
+
 		finalZFrameImages[zPlane-1] = cleanedZFrame;
 
 	}
@@ -1135,16 +1170,24 @@ function calibrateImage(windowName, iniValues) {
 	
 }
 
-function autoCreateCleanedStack(imagePath, timepoints, iniValues, blurDetectorFrames, diffDetectorFrames) {
+function createCleanedStack(imagePath, timepoints, iniValues, blurDetectorFrames, diffDetectorFrames, manuallyChosenFrames) {
 
 		//Reorder each individual timepoint stack in Z so that any out of position slices are positioned correctly for motion artifact detection and removal
 		//Go through each timepoint
+		framesPerPlane = iniValues[4];
+		numberOfZPlanes = iniValues[3];
+		framesPerTimepoint = framesPerPlane * numberOfZPlanes;
+
 		finalTimepointImages = newArray(timepoints);
 		for(currentTimepoint = 1; currentTimepoint < timepoints+1; currentTimepoint++) {
 
 			renameAs = "Timepoint";
+			manualFramesThisTimepoint = newArray('false');
+			if(manuallyChosenFrames[0] != 'false') {
+				manualFramesThisTimepoint = Array.slice(manuallyChosenFrames, (currentTimepoint - 1) * framesPerTimepoint, framesPerTimepoint * currentTimepoint);
+			}
 
-			timepointStack = autoCreateCleanedTimepoint(renameAs, imagePath, currentTimepoint, iniValues, blurDetectorFrames, diffDetectorFrames);
+			timepointStack = createCleanedTimepoint(renameAs, imagePath, currentTimepoint, iniValues, blurDetectorFrames, diffDetectorFrames, manualFramesThisTimepoint);
 			finalTimepointImages[currentTimepoint-1] = timepointStack;
 
 		}
@@ -1190,6 +1233,59 @@ function saveAndMoveOutputImage(imagePath, directories) {
 
 	selectWindow(saveName);
 	run("Close");
+
+}
+
+function getTableColumn(fileLoc, colName) {
+
+	open(fileLoc);
+	tableName = Table.title;
+	selectWindow(tableName);
+
+	outputArray = Table.getColumn(colName);
+
+	selectWindow(tableName);
+	run("Close");
+
+	return outputArray;
+
+}
+
+
+function createProcessedImageStacks(imagesToProcessArray, directories, iniValues, preProcStringToFind, blurDetectorFrames, diffDetectorFrames) {
+
+	if(imagesToProcessArray[0] != 0) {
+
+		for(currImage = 0; currImage<imagesToProcessArray.length; currImage++) {
+			
+			print("Creating cleaned stack for ", imagesToProcessArray[currImage]);
+			imagePath = directories[0] + imagesToProcessArray[currImage];
+			timepoints =  openAndGetImageTimepoints(imagePath, iniValues, preProcStringToFind);
+			
+			stackContrastAdjust(imagesToProcessArray[currImage]);
+			
+			expandCanvas(imagesToProcessArray[currImage]);
+	
+			slicesToUseFile = directories[1] + imagesToProcessArray[currImage] + "/Slices To Use.csv";
+			manuallyChosenFrames = newArray('false');
+			if(File.exists(slicesToUseFile) == 1) {
+				print("Using manually chosen frames to create processed stack for", imagesToProcessArray[currImage]);
+				manuallyChosenFrames = getTableColumn(slicesToUseFile, "Slices");
+			} else {
+				print("Automatically choosing frames to create processed stack for", imagesToProcessArray[currImage]);
+			}	
+		
+			createCleanedStack(imagePath, timepoints, iniValues, blurDetectorFrames, diffDetectorFrames, manuallyChosenFrames);
+		
+			saveAndMoveOutputImage(imagePath, directories);
+	
+			print("Image processing for ", imagesToProcessArray[currImage], " complete");
+			
+		}
+	
+	} else {
+		print("No images to process");
+	}
 
 }
 
@@ -1247,33 +1343,12 @@ for (i = 0; i < iniTextStringsPre.length; i++) {
 
 //For our images that are flagged for manual frame selection, ask the user to identify which frames
 //to keep, then for each image, save this in a table in that images directory
-manualFrameSelectionWrapper(directories, manualFlaggedImages, iniValues, diffDetectorFrames, preProcStringToFind);
+manualFrameSelectionWrapper(directories, manualFlaggedImages, iniValues, diffDetectorFrames, preProcStringToFind, manCorrect);
 
 //Get the list of images we're going to process - if we've selected to process manual images, these
 //are what we process, else we do non-manually flagged images
 imagesToProcessArray = imagesToProcess(manualFlaggedImages, directories);
 
-if(imagesToProcessArray[0] != 0) {
+createProcessedImageStacks(imagesToProcessArray, directories, iniValues, preProcStringToFind, blurDetectorFrames, diffDetectorFrames);
 
-	for(currImage = 0; currImage<imagesToProcessArray.length; currImage++) {
-	
-		imagePath = directories[0] + imagesToProcessArray[currImage];
-		timepoints =  openAndGetImageTimepoints(imagePath, iniValues, preProcStringToFind);
-	
-		//Next is to put functions in here that read in the manual slices to use tables and run processing on those
-		
-		stackContrastAdjustExpandCanvas(imagesToProcessArray[currImage]);
-	
-		autoCreateCleanedStack(imagePath, timepoints, iniValues, blurDetectorFrames, diffDetectorFrames);
-	
-		saveAndMoveOutputImage(imagePath, directories);
-
-		print("Automated image processing for ", imagesToProcessArray[currImage], " complete");
-		
-	}
-
-} else {
-	print("No images to process");
-}
-
-print("Image processing complete")
+print("Image processing complete");

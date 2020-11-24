@@ -1,3 +1,14 @@
+function indexOfValueInArray(lookFor, lookIn) {
+	for(checkIndex = 0; checkIndex < lookIn.length; checkIndex++){
+		if(lookIn[checkIndex] == lookFor) {
+			return checkIndex;
+		}
+	}
+
+	return -1;
+
+}
+
 //Get user input into where our working directory, and image storage directories, reside
 directories = getWorkingAndStorageDirectories();
 //[0] is input, [1] is output, [2] is done (working directories) [3] is directoryName (storage directory)
@@ -5,13 +16,42 @@ directories = getWorkingAndStorageDirectories();
 processedStacks = listFilesAndFilesSubDirectories(directories[1], "processed");
 
 tableLoc = directories[1] + "Images to Use.csv";
-
 imageList = getTableColumn(tableLoc, "Image List");
 keptList = getTableColumn(tableLoc, "Kept");
 manualFlag = getTableColumn(tableLoc, "Manual Flag");
 ignoreList = getTableColumn(tableLoc, "Ignore");
 
+for(currImage = 0; currImage < processedStacks.length; currImage++) {
+	
+	windowName = File.getName(processedStacks[currImage]);
+	print(windowName);
 
+	index = indexOfValueInArray(windowName, imageList);
+	checkImage = true;
+
+	if(index != -1) {
+		if(File.exists(File.getParent(processedStacks[currImage]) + "/Mask Size Status.csv") == 1) {
+			keptList[index] = 1;
+			print("Already thresholded image");
+		}
+		if(keptList[index] == 1 || ignoreList[index] == 1) {
+			checkImage = false;
+			print("Already kept or ignored image");
+		}
+		if(File.exists(directories[0] + windowName) == 1 && manualFlag[index] == 1){
+			checkImage = false;
+			print("Image flagged for manual selection and is in input");
+		}
+	} else {
+
+		exit("Image not found in Images to Use.csv file");
+		
+	}
+
+	if(indexOf(toLowerCase(File.getParent(outputMaxFiles[i])), toLowerCase(Table.getString("Image List", currRow))) > -1) {
+
+
+}
 
 //If the user has chosen to select images to analyse
 if(analysisSelections[1] == 1) {

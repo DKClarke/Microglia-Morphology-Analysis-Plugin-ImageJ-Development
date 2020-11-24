@@ -9,6 +9,19 @@ function indexOfValueInArray(lookFor, lookIn) {
 
 }
 
+//Ask the user how many images to display on the screen at once for quality control and return this number
+stringa="How many images do you want to display on the screen at once?";
+Dialog.create("Experiment Information");
+	
+Dialog.addNumber(stringa,0);
+Dialog.show();
+onScreen = Dialog.getNumber();
+
+//Array to store variables for use in generating the Images to Use.csv file
+variableArray = newArray(onScreen, 0, 0);	
+//Indexes: how many images the user wants on the screen at once, how many images we've added to our imagesToUse array, and an index of how many images we've
+//added to our final output array
+
 //Get user input into where our working directory, and image storage directories, reside
 directories = getWorkingAndStorageDirectories();
 //[0] is input, [1] is output, [2] is done (working directories) [3] is directoryName (storage directory)
@@ -21,10 +34,99 @@ keptList = getTableColumn(tableLoc, "Kept");
 manualFlag = getTableColumn(tableLoc, "Manual Flag");
 ignoreList = getTableColumn(tableLoc, "Ignore");
 
+indices = newArray(1);
+opened = 0;
 for(currImage = 0; currImage < processedStacks.length; currImage++) {
 	
 	windowName = File.getName(processedStacks[currImage]);
 	print(windowName);
+
+	//Open each image
+	open(processedStacks[currImage]);
+
+	//Store the index of the image in indices, and add one to the opened variable
+	if(opened == 0) {
+		indices[0] = currImage;
+	} else {
+		storeIt = newArray(1);
+		storeIt[0] = currImage;
+		indices = Array.concat(indices, storeIt);
+	}
+	opened++;
+
+	displayImages = false;
+	//If we've opened enough images to satisfy our image limit value, we print that we've hit the limit
+	if(opened != 0 && opened%onScreen==0) {
+		print("Hit the limit");
+		displayImages = true;
+	//Otherwise if we're on our final opened image and we don't have enough images open to reach the limit, we print as such
+	} else if (currImage==(processedStacks.length-1) && nImages < onScreen) {
+		print("Reached end of the directory and not enough images to reach limit");
+		displayImages = truel
+	}
+
+	//If we've hit our limit or we're done opening images
+	if(displayImages == true) {
+
+		setOption("AutoContrast", true);
+		//We get a list of all their titles
+		allImages = getList("image.titles");
+		
+		//We tile all the open images, display them to the user, and ask the user to close the ones that don't pass QA
+		setBatchMode("Exit and Display");
+		run("Tile");
+		waitForUser("Close the images that aren't good enough in terms of registration for analysis then press ok");
+		openImages = getList("image.titles");
+
+		//We loop through the titles of the open images and check within our processed images array
+		//to find the images location, and we set the imagesToUse array value at that location to 1 (from 0) to indicate that the associated
+		//images in outputMaxFiles is one we want to use
+		for(i0=0; i0<allImages.length; i0++) {
+
+			retained = true;
+			for(i1=0; i1<openImages.length; i1++) {
+				if(indexOf(toLowerCase(allImages[i0]), toLowerCase(openImages[i1])) == -1) {
+					retained = false;					
+					//We increase our variableArray[1] value to keep track of how many images we've added to our imagesToUse array 
+					variableArray[1]++;
+					break;
+				}
+
+			}
+
+			//If we're not keeping this image
+			if(retained == false) {
+				fileName = allImages[i0];
+				
+				//If this image has a manual registration frame selection file and is in our done folder, this means we've manually
+				//registered it and still don't want it so set ignore to 1
+				if(File.exists(directories[1] + fileName + "/Slices To Use.csv")==1 && File.exists(directories[2] + fileName + ".tif")==1) {
+					ignore[i0] = 1;
+
+					//Else, if this image doesn't have a manual registration frame selection file, we flag it for manual analysis and move
+					//the image from the done folder to the input folder
+					} else if(File.exists(File.getParent(fileName) + "/Slices To Use.csv")==0) {
+						manualFlag[i0] = 1;
+						if(File.exists(directories[0] + fileName + ".tif")==0) {
+							print(directories[2] + fileName + ".tif");
+							wasMoved = File.rename(directories[2]+fileName + ".tif", directories[0]+fileName + ".tif");
+							if(wasMoved == 0) {
+								waitForUser("Issue with moving image");
+							} else {
+								print("moved");
+							}
+						}
+					}
+				}
+			}
+		}
+
+
+
+	}
+	
+
+
 
 	index = indexOfValueInArray(windowName, imageList);
 	checkImage = true;

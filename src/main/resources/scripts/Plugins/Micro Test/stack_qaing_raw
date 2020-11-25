@@ -1,14 +1,3 @@
-function indexOfValueInArray(lookFor, lookIn) {
-	for(checkIndex = 0; checkIndex < lookIn.length; checkIndex++){
-		if(lookIn[checkIndex] == lookFor) {
-			return checkIndex;
-		}
-	}
-
-	return -1;
-
-}
-
 function getNumberOfImagesToDisplay() {
 
 	//Ask the user how many images to display on the screen at once for quality control and return this number

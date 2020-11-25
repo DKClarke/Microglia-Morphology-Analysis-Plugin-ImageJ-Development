@@ -333,12 +333,12 @@ function getManualFlaggedImages(manualFlagTable) {
 		//Retrieve columns from table
 		manualFlag = getTableColumn(manualFlagTable, "Manual Flag");
 		imageName = getTableColumn(manualFlagTable, "Image List");
-		ignoreFlag = getTableColumn(manualFlagTable, "Ignore");
+		keptFlag = getTableColumn(manualFlagTable, "Kept");
 
 		//If an image has a manual flag or is set to be ignored, 
 		//flag it's image List values with a 0 then remove
 		for(currImage = 0; currImage<manualFlag.length; currImage++) {
-			if(manualFlag[currImage]==0 || ignoreFlag[currImage] == 1) {
+			if(manualFlag[currImage]== 'false') {
 				imageName[currImage] = 0;
 			}
 		}
@@ -1227,7 +1227,7 @@ function saveAndMoveOutputImage(imagePath, directories) {
 		if(wasMoved == 0) {
 			print("Issue with moving image to done folder");
 		} else {
-				print("Image moved from input to Done");
+			print("Image moved from input to Done");
 		}
 	}
 

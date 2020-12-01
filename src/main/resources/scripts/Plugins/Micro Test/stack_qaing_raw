@@ -98,6 +98,35 @@ function listFilesAndFilesSubDirectories(directoryName, subString) {
 	
 }
 
+function appendIfNew(currentArray, checkInArray, arrayToUpdate, arrayToUpdateWith) {
+
+	//For each element in our array
+	for(currElement = 0; currElement < currentArray.length; currElement++) {
+		elementFound = false;
+
+		//Check in the other arrays
+		for(checkAgainst = 0; checkAgainst < checkInArray.length; checkAgainst ++) {
+
+			//If one of the images we just QAd is in the existing table, we update the kept
+			//and manualFlag values for that image
+			if(currentArray[currElement] == checkInArray[checkAginst]) {
+				arrayToUpdate[checkAgainst] = arrayToUpdateWith[currElement];
+				elementFound = true;
+				break;
+			}
+		}
+
+		//If the image we QAd wasn't in the existing table, append this to the output from the
+		//existing table
+		if(elementFound == false) {
+			arrayToUpdate = Array.concat(arrayToUpdate, newArray(arrayToUpdateWith[currElement]));
+		}
+	}
+
+	return arrayToUpdate;
+
+}
+
 //Get the number of images to display onscreen
 onScreen = getNumberOfImagesToDisplay();
 
@@ -111,6 +140,7 @@ processedStacks = listFilesAndFilesSubDirectories(directories[1], "processed");
 //If we already have a table, get out existing values, or create the arrays to fill
 tableLoc = directories[1] + "Images to Use.csv";
 
+//Will need to update this with the new column names and arrays we're using in the previous step
 if(File.exists(tableLoc) == 1) {
 	imageList = getTableColumn(tableLoc, "Image List");
 	keptList = getTableColumn(tableLoc, "Kept");
@@ -230,31 +260,9 @@ for(currImage = 0; currImage < processedStacks.length; currImage++) {
 
 			}
 
-			//For each image we just approved
-			for(checkedImage = 0; checkedImage < allImages.length; checkedImage++) {
-				imageFound = false;
-
-				//Check in the existing table values
-				for(checkAgainst = 0; checkAgainst < existingTableLength; checkAgainst ++) {
-
-					//If one of the images we just QAd is in the existing table, we update the kept
-					//and manualFlag values for that image
-					if(allImages[checkedImage] == imageList[checkAginst]) {
-						keptList[checkAgainst] = keptArray[checkedImage];
-						manualFlagList[checkAgainst] = manualFlagArray[checkedImage];
-						imageFound = true;
-						break;
-					}
-				}
-
-				//If the image we QAd wasn't in the existing table, append this to the output from the
-				//existing table
-				if(imageFound == false) {
-					imageList = Array.concat(imageList, newArray(allImages[checkedImage]));
-					keptList = Array.concat(keptList, newArray(keptArray[checkedImage]));
-					manualFlagList = Array.concat(manualFlagList, newArray(manualFlagArray[checkedImage]));
-				}
-			}
+			keptList = appendIfNew(allImages, imageList, keptList, keptArray);
+			manualFlagList = appendIfNew(allImages, imageList, manualFlagList, manualFlagArray);
+			imageList = appendIfNew(allImages, imageList, imageList, allImages);
 
 			//We close all the open images
 			if(nImages>0) {
@@ -274,4 +282,9 @@ keptList = removeZeroes(keptList);
 manualFlagList = removeZeroes(manualFlagList);
 
 //Save these arrays into a table
+Table.create("Images to Use.csv");
+Table.setColumn("Image List", imageList);
+Table.setColumn("Kept", keptList);
+Table.setColumn("Manual Flag", manualFlagList);
+Table.save(directories[1] + "Images to Use.csv");
 

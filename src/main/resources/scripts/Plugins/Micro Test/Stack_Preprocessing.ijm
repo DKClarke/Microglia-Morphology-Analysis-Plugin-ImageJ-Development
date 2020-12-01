@@ -319,43 +319,37 @@ function moveImageToInput(fileLocations, directories, appendWith){
 
 }
 
-function getManualFlaggedImages(manualFlagTable) {
+function getManualFlaggedImages(imageName, autoProcessed, autoPassedQA, manualProcessed) {
 
-	proceed = false;
-	if(File.exists(manualFlagTable)==1) {
-		proceed = true;
+	print("Retrieving image IDs to manually select frames for");
+
+	//If an image has a manual flag or is set to be ignored, 
+	//flag it's image List values with a 0 then remove
+	for(currImage = 0; currImage<autoProcessed.length; currImage++) {
+		
+		//If the image has previously been automatically processed
+		if(autoProcessed[currImage] == 1) {
+			
+			//If the image failed QA after being automatically processed
+			if(autoPassedQA[currImage] == 'fail') {
+
+				//If we haven't manually processed this image
+				if(manualProcessed[currImage] == 0) {
+
+					imageName[currImage] = 0;
+
+				}
+			}
+		}
 	}
+	imagesForMan = removeZeros(imageName);
 
-	if(proceed == true) {
-
-		print("Retrieving image IDs to manually select frames for");
-
-		//Retrieve columns from table
-		manualFlag = getTableColumn(manualFlagTable, "Manual Flag");
-		imageName = getTableColumn(manualFlagTable, "Image List");
-		keptFlag = getTableColumn(manualFlagTable, "Kept");
-
-		//If an image has a manual flag or is set to be ignored, 
-		//flag it's image List values with a 0 then remove
-		for(currImage = 0; currImage<manualFlag.length; currImage++) {
-			if(manualFlag[currImage]== 'false') {
-				imageName[currImage] = 0;
-			}
+	//Get the file name of the manually flagged images
+	if(imagesForMan.length != 0) {
+		for(currImage = 0; currImage<imagesForMan.length; currImage++) {
+			imagesForMan[currImage] = File.getName(imagesForMan[currImage]);
 		}
-		imagesForMan = removeZeros(imageName);
-
-		//Get the file name of the manually flagged images
-		if(imagesForMan.length != 0) {
-			for(currImage = 0; currImage<imagesForMan.length; currImage++) {
-				imagesForMan[currImage] = File.getName(imagesForMan[currImage]);
-			}
-		} else {
-			proceed = false;
-		}
-
-	} 
-	
-	if(proceed == false) {
+	} else {
 		print("No image IDs to be manually processed");
 		imagesForMan = newArray('false');
 	}
@@ -1289,6 +1283,45 @@ function createProcessedImageStacks(imagesToProcessArray, directories, iniValues
 
 }
 
+function appendIfNew(currentArray, checkInArray, arrayToUpdate, arrayToUpdateWith) {
+
+	//For each element in our array
+	for(currElement = 0; currElement < currentArray.length; currElement++) {
+		elementFound = false;
+
+		//Check in the other arrays
+		for(checkAgainst = 0; checkAgainst < checkInArray.length; checkAgainst ++) {
+
+			//If one of the images we just QAd is in the existing table, we update the kept
+			//and manualFlag values for that image
+			if(currentArray[currElement] == checkInArray[checkAginst]) {
+				arrayToUpdate[checkAgainst] = arrayToUpdateWith[currElement];
+				elementFound = true;
+				break;
+			}
+		}
+
+		//If the image we QAd wasn't in the existing table, append this to the output from the
+		//existing table
+		if(elementFound == false) {
+			arrayToUpdate = Array.concat(arrayToUpdate, newArray(arrayToUpdateWith[currElement]));
+		}
+	}
+
+	return arrayToUpdate;
+
+}
+
+function updateImagesToUseArray(tableLoc, colName, checkArray, checkAgainst, fillWith) {
+
+	//Retrieve columns from our images to use table telling us what stage our images are at
+	currentArray = getTableColumn(tableLoc, colName);
+	currentArrayToFill = newArray(checkAgainst.length);
+	Array.fill(currentArrayToFill, fillWith);
+	currentArray = appendIfNew(checkAgainst, checkArray, currentArray, currentArrayToFill);
+
+}
+
 //Get user input into where our working directory, and image storage directories, reside
 directories = getWorkingAndStorageDirectories();
 //[0] is input, [1] is output, [2] is done (working directories) [3] is directoryName (storage directory)
@@ -1325,10 +1358,51 @@ moveImageToInput(fileLocations, directories, preProcStringToFind);
 //once we've gone through all the microglia morphology images in our image storage directory
 imagesInput = getFileList(directories[0]);
 
-//If we have an 'images to use' file in our output folder, get out the images that have been flaged
-//for manual frame selection - if none, we return an array of length 1 where the first and only element is false
+//Point to the table where we store the status of our images in the processing pipeline
 imagesToUseFile = directories[1] +  "Images to Use.csv";
-manualFlaggedImages = getManualFlaggedImages(imagesToUseFile);
+
+//If the file exists, it means we've run at least this step before, so retrieve the stage all images are at
+if(File.exists(imagesToUseFile) == 1) {
+
+	//Retrieve columns from our images to use table telling us what stage our images are at, and if we have images in
+	//imagesInput that aren't in the imageName column, we append an extra element to our arrays with the default values
+	//and then do this with the image name to imageName
+	imageName = getTableColumn(imagesToUseFile, "Image Name");
+
+	autoProcessed = updateImagesToUseArray(imagesToUseFile, "Auto Processing", imageName, imagesInput, 0);
+
+	autoPassedQA = updateImagesToUseArray(imagesToUseFile, "Auto QA Passed", imageName, imagesInput, 'not attempted');
+
+	manualProcessed = updateImagesToUseArray(imagesToUseFile,"Manual Processing", imageName, imagesInput, 0);
+
+	manualPassedQA = updateImagesToUseArray(imagesToUseFile, "Manual QA Passed", imageName, imagesInput, 'not attempted');
+
+	imageName = appendIfNew(imagesInput, imageName, imageName, imagesInput);
+
+	//Return an array of the images that are flagged for manual processing
+	manualFlaggedImages = getManualFlaggedImages(imageName, autoProcessed, autoPassedQA, manualProcessed);
+
+//If we don't have the file, we haven't run this yet
+} else {
+
+	//Set our arrays to their default values
+	imageName = imagesInput;
+	autoProcessed = newArray(imageName.length);
+	Array.fill(autoProcessed, 0);
+	autoPassedQA = newArray(imageName.length);
+	Array.fill(autoPassedQA, 'not attempted');
+	manualProcessed = newArray(imageName.length);
+	Array.fill(manualProcessed, 0);	
+	manualPassedQA = newArray(imageName.length);
+	Array.fill(manualPassedQA, 'not attempted');	
+
+	print("No image IDs to be manually processed");
+	imagesForMan = newArray('false');
+
+}
+
+//Next steps here are to update the values in these arrays with the appropriate values depending on what processing 
+//the images go through in this step, and then save them to the table
 
 //This is an array with the strings that come just before the information we want to retrieve from the ini file.
 iniTextStringsPre = newArray("x.pixel.sz = ", "y.pixel.sz = ", "z.spacing = ", "no.of.planes = ", "frames.per.plane = ");

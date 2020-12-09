@@ -140,37 +140,85 @@ processedStacks = listFilesAndFilesSubDirectories(directories[1], "processed");
 //If we already have a table, get out existing values, or create the arrays to fill
 tableLoc = directories[1] + "Images to Use.csv";
 
-//Will need to update this with the new column names and arrays we're using in the previous step
-if(File.exists(tableLoc) == 1) {
-	imageList = getTableColumn(tableLoc, "Image List");
-	keptList = getTableColumn(tableLoc, "Kept");
-	manualFlagList = getTableColumn(tableLoc, "Manual Flag");
-} else {
-	imageList = newArray(1);
-	keptList = newArray(1);
-	manualFlagList = newArray(1);
-}
+imageName = getTableColumn(imagesToUseFile, "Image Name");
+autoProcessed = getTableColumn(imagesToUseFile, "Auto Processing");
+autoPassedQA = getTableColumn(imagesToUseFile, "Auto QA Passed");
+manualProcessed = getTableColumn(imagesToUseFile, "Manual Processing");
+manualPassedQA = getTableColumn(imagesToUseFile, "Manual QA Passed");
 
 // Store the size of the existing table
-existingTableLength = imageList.length;
+existingTableLength = imageName.length;
 
 //Count how many images we've opened (so we know when we hit enough to display to the user)
 opened = 0;
 for(currImage = 0; currImage < processedStacks.length; currImage++) {
 
-	checked = false;
-	ignore = true;
-
 	baseImage = substring(Fiile.getName(processedStacks[currImage]), 0, indexOf(processedStacks[currImage], " processed.tif"));
 	doneFileLoc = directories[2] + File.getName(baseImage) + ".tif";
 
-	for(currRow = 0; currRow < imageList.length; currRow++) {
-		if(File.getName(processedStacks[currImage]) == imageList[currRow]) {
-			checked = true;
-			kept = keptList[currRow];
-			manualFlag = manualFlagList[currRow];
+	checkIt = false;
+
+	//Loop through our images to use array to find the info about the current processed image
+	for(currRow = 0; currRow < imageName.length; currRow++) {
+
+		if(File.getName(processedStacks[currImage]) == imageName[currRow]) {
+
+			//If the image hasn't been auto processed (which is impossible if it is in the processedStacks away but for clarity)
+			//We don't QA it
+			if(autoProcessed != 1) {
+				checkIt = false;
+			}
+
+
+			//If the image has been auto processed
+			if(autoProcessed == 1) {
+
+				//If it hasn't been QA'd for the auto processing, QA it
+				if(autoPassedQA == -1) {
+					checkIt = true;
+				}
+
+				//If it has already passed auto processing QA, ignore it
+				if(autoPassedQA == 1) {
+					checkIt = false;
+				}
+
+
+				//If it failed auto processing QA
+				if(autoPassedQA == 0) {
+
+					//Check if it has been manually processed, and if not, don't QA it
+					if(manualProcessed == 0) {
+						checkIt = false;
+					}
+
+					//If it has been manually processed
+					if(manualProcessed == 1) {
+
+						//If it hasn't been QA'd after manual processing, QA it
+						if(manualPassedQA == -1) {
+							checkIt = true;
+						//If it failed or passed manual QA, that it's last shot so we don't QA it	
+						} else {
+							checkIt = false;
+						}
+					}
+				}
+			}
+
+			break;
 		}
 	}
+
+	//////////////////	//////////////////
+	//////////////////
+
+	//We're here in terms of updating the code
+
+		//////////////////
+	//////////////////
+	//////////////////
+
 
 	//Usually we ignore an image if it was previously checked, unless it was also flagged for manual analysis
 	//and then processed using manually selected frames

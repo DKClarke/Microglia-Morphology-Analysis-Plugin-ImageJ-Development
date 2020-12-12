@@ -1,38 +1,62 @@
-if(analysisSelections[2] == true || analysisSelections[3] == true || analysisSelections[4] == true || analysisSelections[5] == true) {
-	//These folder names are where we store various outputs from the processing 
-	//(that we don't need for preprocessing)
-	storageFolders=newArray("Cell Coordinates/", "Cell Coordinate Masks/",
-		"Somas/", "Candidate Cell Masks/", "Local Regions/", "Results/");
 
-	//Set the size of the square to be drawn around each cell in um
-	LRSize = 120;
-}
+//These folder names are where we store various outputs from the processing 
+//(that we don't need for preprocessing)
+storageFolders=newArray("Cell Coordinates/", "Cell Coordinate Masks/",
+    "Somas/", "Candidate Cell Masks/", "Local Regions/", "Results/");
+
+//Set the size of the square to be drawn around each cell in um
+LRSize = 120;
+
 
 ////////////////////////////////////////////////////////////////////////////////	
 //////////////////////////////Cell Position Marking/////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-//If we're going to mark cell positions on our processed images
 
-if(analysisSelections[2] == true) {
+//Get user input into where our working directory, and image storage directories, reside
+directories = getWorkingAndStorageDirectories();
+//[0] is input, [1] is output, [2] is done (working directories) [3] is directoryName (storage directory)
 
-	//If we have generated an images to use csv file - otherwise we can't run this step
-	if(File.exists(directories[1] + "Images to Use.csv") == 1) {
+//Populate our image info arrays
+tableLoc = directories[1] + "Images to Use.csv";
 
-		//Run housekeeping
-		Housekeeping();
+if(File.exists(tableLoc) != 1) {
+	exit("Need to run the stack preprocessing step first");
+}
 
-		//Get the image name and whether the image was kept and analysed
-		open(directories[1] + "Images to Use.csv");
-		Table.rename("Images to Use.csv", "Images to Use");
-		selectWindow("Images to Use");
-		images = Table.getColumn("Image List");
-		kept = Table.getColumn("Kept");
-		manFlag = Table.getColumn("Manual Flag");
-		ignore = Table.getColumn("Ignore");
+//If we already have a table get out our existing status indicators
+imageName = getTableColumn(imagesToUseFile, "Image Name");
+autoProcessed = getTableColumn(imagesToUseFile, "Auto Processing");
+autoPassedQA = getTableColumn(imagesToUseFile, "Auto QA Passed");
+manualProcessed = getTableColumn(imagesToUseFile, "Manual Processing");
+manualPassedQA = getTableColumn(imagesToUseFile, "Manual QA Passed");
 
-		selectWindow("Images to Use");
-		run("Close");
+for(currImage = 0; currImage < imageName.length; currImage++) {
+    if(autoPassedQA[currImage] == 1 || manualPassedQA[currImage] == 1) {
+
+        //If the image was kept, count how many 10um thick substacks we can make with at least
+        //10um spacing between them, and 10um from the bottom and top of the stack
+        run("TIFF Virtual Stack...", "open=["+directories[1]+File.getNameWithoutExtension(imageName[currImage])+"/"+File.getNameWithoutExtension(imageName[currImage])+" processed.tif]");
+        getVoxelSize(vWidth, vHeight, vDepth, vUnit);
+        
+        //Calculate how much Z depth there is in the stack
+        zSize = nSlices*vDepth;
+
+        //Calculate how many 10um thick substacks we can make from this stack, including a user defined buffer size
+        //between substacks
+        noSubstacks = floor(zSize / (zBuffer+10));
+
+        //Fill maskGenerationArray with a string of the range of z planes to include in each substack
+        maskGenerationArray = newArray(noSubstacks);
+        for(currSubstack = 0; currSubstack < noSubstacks; currSubstack++){
+            //Calculate what 
+            startZ = (zBuffer * (currSubstack+1)) + (currSubstack * 10);
+            maskGenerationArray[currSubstack] = toString(startZ) + '-' + toString(startZ + 10);
+        }
+
+    }
+}
+
 
 		//Here we loop through all the images in the images to use table
 		//No counts stores how many substacks we can make from our image
@@ -638,4 +662,3 @@ if(analysisSelections[2] == true) {
 			}
 		}
 	}
-}

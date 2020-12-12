@@ -203,6 +203,9 @@ function getPreprocessingInputs() {
 
 //This function takes an input array, and removes all the 0's in it, outputting 
 //it as the output array which must be passed in as an argument
+
+
+//Replace this with the new method Array.deleteValue
 function removeZeros(inputArray) {
 
 	//Loop through the input array, if the value isn't a 0, we place that in our 
@@ -264,7 +267,7 @@ function listFilesAndFilesSubDirectories(directoryName, subString) {
 	}
 
 	//Create a new array that we fill with all non zero values of fileLocations
-	output = removeZeros(fileLocations);
+	output = Array.deleteValue(fileLocations, 0);
 
 	//Then return the output array
 	return output;
@@ -452,10 +455,10 @@ function makeZPlaneSubstack(framesPerPlan, zPlane, parentImage) {
 }
 
 function selectFramesManually(noFramesToSelect, imageName) {
-    
-    selectWindow(imageName);
+
+	selectWindow(imageName);
 	subSlices = nSlices;
-	
+    	
     //Create an array to store which of the current substack slices we're keeping - fill with zeros
 	framesToKeepArray = newArray(subSlices);
     framesToKeepArray = Array.fill(framesToKeepArray, 0);
@@ -468,13 +471,13 @@ function selectFramesManually(noFramesToSelect, imageName) {
     for(currFrame=0; currFrame < noFramesToSelect; currFrame++) {
             
 		selectWindow(imageName);
-		setBatchMode("show")
-        waitForUser("Scroll onto the frame to retain on the image labelled 'Substack etc'");
+		setBatchMode("show");
+        waitForUser("Scroll onto the frame to retain and click 'OK'");
         keptSlice = getSliceNumber();
         print("Slice selected: ", keptSlice);
         print("If selecting more, select a different one");
 
-        framesToKeepArray[(keptSlice-1)] = 1;
+        framesToKeepArray[(keptSlice-1)] = keptSlice;
             
     }
 
@@ -524,19 +527,6 @@ function manuallyApproveZPlanes(framesPerPlane, zPlane, renameAs, framesToKeep) 
 
 }
 
-
-function addPreviousFramesToManualSelection(currentStep, framesPerStep, framesArray) {
-			
-	framesBeforeThisStep = (currentStep-1) * framesPerStep;
-	adjustedFrameLocations = newArray(framesArray.length);
-	for(currentIndex = 0; currentIndex < framesArray.length; currentIndex++) {
-		adjustedFrameLocations[currentIndex] = framesArray[currentIndex] + framesBeforeThisStep;
-	}
-
-	return adjustedFrameLocations;
-
-}
-
 function manuallyApproveTimepoints(toOpen, currentTimepoint, iniValues, framesToKeep, renameAs) {
 
 	//Get out the current timepoint, split it into a stack for each frame (i.e. 14 stacks of 26 slices)
@@ -549,12 +539,11 @@ function manuallyApproveTimepoints(toOpen, currentTimepoint, iniValues, framesTo
 	for(zPlane=1; zPlane<(numberOfZPlanes + 1); zPlane++) {
 
 		zFramesToKeep = manuallyApproveZPlanes(framesPerPlane, zPlane, renameAs, framesToKeep);
-		zFramesToKeepOverallPosition = addPreviousFramesToManualSelection(zPlane, framesPerPlane, zFramesToKeep);
 
 		if(zPlane == 1) {
-			finalZFrameImages = zFramesToKeepOverallPosition;
+			finalZFrameImages = zFramesToKeep;
 		} else {
-			finalZFrameImages = Array.concat(finalZFrameImages, zFramesToKeepOverallPosition);
+			finalZFrameImages = Array.concat(finalZFrameImages, zFramesToKeep);
 		}
 
 	}
@@ -598,17 +587,16 @@ function manualFrameSelection(directories, manualFlaggedImages, iniValues, frame
 			//Reorder each individual timepoint stack in Z so that any out of position slices are positioned correctly 
 			//for motion artifact detection and removal
             //Go through each timepoint
-            for(currentTimepoint=1; currentTimepoint<timepoints+1; k++) {	
+            for(currentTimepoint=1; currentTimepoint<timepoints+1; currentTimepoint++) {	
 				
 				renameAs = "Timepoint";
 				timepointFramestoKeep = manuallyApproveTimepoints(toOpen, currentTimepoint, iniValues, framesToKeep, renameAs);
 
 				framesPerTimepoint = framesPerPlane*numberOfZPlanes;
-				timepointFramesToKeepOverallPosition = addPreviousFramesToManualSelection(currentTimepoint, framesPerTimepoint, timepointFramestoKeep);
 
 			}
 
-			populateAndSaveSlicesToUseFile(slicesToUseFile, timepointFramesToKeepOverallPosition);
+			populateAndSaveSlicesToUseFile(slicesToUseFile, timepointFramestoKeep);
 
             Housekeeping();
 
@@ -651,14 +639,14 @@ function imagesToProcess(manualFlaggedImages, directories) {
 			for(currManualCheck = 0; currManualCheck < manualFlaggedImages.length; currManualCheck++){
 
 				//If they're in our manual flagged images array, and they don't have a slices to use file created for them, exclude them
-				if(File.getName(imagesInput[currImage]) == manualFlaggedImages[currManualCheck] && File.exists(directories[1] + manualFlaggedImages[currManualCheck] + "/Slices To Use.csv") != 1){
+				if(File.getName(imagesInput[currImage]) == manualFlaggedImages[currManualCheck] && File.exists(directories[1] + File.getNameWithoutExtension(manualFlaggedImages[currManualCheck]) + "/Slices To Use.csv") != 1){
 					imagesInput[currImage] = 0;
 					break;
 				}
 			}
 		}
 
-		imagesToProcessArray = removeZeros(imagesInput);
+		imagesToProcessArray = Array.deleteValue(imagesInput, 0);
 
 		//Return the array of images to put through processing
 		return imagesToProcessArray;
@@ -702,7 +690,7 @@ function removeStringFromArray(fileLocations, string) {
 		}
 	}
 
-	toReturn = removeZeros(fileLocations);
+	toReturn = Array.deleteValue(fileLocations, 0);
 
 	return toReturn;
 	
@@ -773,7 +761,6 @@ function makeSubstackOfSlices(windowName, renameTo, sliceArray) {
 	//maker function so that we can make a substack of all kept TZ slices in
 	//a single go - we input the imageNumberArrayCutoff array
 	strung= collapseArrayValuesIntoString(sliceArray, ",");
-
 	selectWindow(windowName);	
 	run("Make Substack...", "slices=["+strung+"]");
 	rename(renameTo);
@@ -796,7 +783,7 @@ function createReferenceFrame(framesFlaggedForRetention, currentSubstackWindowNa
 	
 	//Here we order then cutoff the zeros so we get a small array of the 
 	//slices to be retained
-	framesToRetain=removeZeros(framesFlaggedForRetention);
+	framesToRetain=Array.deleteValue(framesFlaggedForRetention, 0);
 
 	makeSubstackOfSlices(currentSubstackWindowName, renameTo, framesToRetain);
 					
@@ -1091,7 +1078,8 @@ function createCleanedTimepoint(renameAs, imagePath, currentTimepoint, iniValues
 			cleanedZFrame = autoCreateCleanedFrame(framesPerPlane, zPlane, renameAs, blurDetectorFrames, diffDetectorFrames);
 		} else {
 			manualFramesThisZ = Array.slice(manuallyChosenFrames, (zPlane - 1) * framesPerPlane, framesPerPlane * zPlane);
-			keptFrames = removeZeros(manualFramesThisZ).length;
+			keptFramesRaw = Array.deleteValue(manualFramesThisZ, 0);
+			keptFrames = keptFramesRaw.length;
 			if(keptFrames != diffDetectorFrames) {
 				print("Manually retained frames per Z: ", keptFrames);
 				print("Number of frames chosen to average over: ", diffDetectorFrames);
@@ -1271,7 +1259,7 @@ function createProcessedImageStacks(imagesToProcessArray, directories, iniValues
 			
 			expandCanvas(imagesToProcessArray[currImage]);
 	
-			slicesToUseFile = directories[1] + imagesToProcessArray[currImage] + "/Slices To Use.csv";
+			slicesToUseFile = directories[1] + File.getNameWithoutExtension(imagesToProcessArray[currImage]) + "/Slices To Use.csv";
 			manuallyChosenFrames = newArray('false');
 			if(File.exists(slicesToUseFile) == 1) {
 				print("Using manually chosen frames to create processed stack for", imagesToProcessArray[currImage]);

@@ -319,10 +319,10 @@ function moveImageToInput(fileLocations, directories, appendWith){
 
 }
 
-function getManualFlaggedImages(imageName, autoProcessed, autoPassedQA, manualProcessed) {
+function getManualFlaggedImages(imageName, autoProcessed, autoPassedQA, manualProcessed, manualPassedQA) {
 
 	print("Retrieving image IDs to manually select frames for");
-	imagesForMan = newArray(1);
+	imagesForMan = newArray('false');
 	count = 0;
 	//If an image has a manual flag or is set to be ignored, 
 	//flag it's image List values with a 0 then remove
@@ -350,7 +350,7 @@ function getManualFlaggedImages(imageName, autoProcessed, autoPassedQA, manualPr
 	}
 
 	//Get the file name of the manually flagged images
-	if(imagesForMan.length != 0) {
+	if(imagesForMan[0] != 'false') {
 		for(currImage = 0; currImage<imagesForMan.length; currImage++) {
 			imagesForMan[currImage] = File.getName(imagesForMan[currImage]);
 		}
@@ -454,34 +454,33 @@ function makeZPlaneSubstack(framesPerPlan, zPlane, parentImage) {
 function selectFramesManually(noFramesToSelect, imageName) {
     
     selectWindow(imageName);
-    subSlices = nSlices;
+	subSlices = nSlices;
 	
     //Create an array to store which of the current substack slices we're keeping - fill with zeros
-    framesToKeep = newArray(subSlices);
-    framesToKeep = Array.fill(framesToKeep, 0);
+	framesToKeepArray = newArray(subSlices);
+    framesToKeepArray = Array.fill(framesToKeepArray, 0);
 
-    setOption("AutoContrast", true);
+	setOption("AutoContrast", true);
+	run("Tile");
 
     //Looping through the number of frames the user selected to keep, ask the user to
     //scroll to a frame to retain, the index of this frame in framesToKeep is then set to 1
     for(currFrame=0; currFrame < noFramesToSelect; currFrame++) {
             
-        setBatchMode("Exit and Display");
-        run("Tile");
-        selectWindow(imageName);
+		selectWindow(imageName);
+		setBatchMode("show")
         waitForUser("Scroll onto the frame to retain on the image labelled 'Substack etc'");
-        setBatchMode(true);
         keptSlice = getSliceNumber();
         print("Slice selected: ", keptSlice);
         print("If selecting more, select a different one");
 
-        framesToKeep[(keptSlice-1)] = 1;
+        framesToKeepArray[(keptSlice-1)] = 1;
             
     }
 
 	setOption("AutoContrast", false);
 
-    return outputArray;
+    return framesToKeepArray;
 }
 
 function populateAndSaveSlicesToUseFile(slicesToUseFile, arrayOfChosenSlices) {
@@ -579,13 +578,13 @@ function manualFrameSelection(directories, manualFlaggedImages, iniValues, frame
 		
 		//If we're doing manual processing and we don't have a list of slices to use for an 
 		//image, but the image exists, proceed
-		slicesToUseFile = directories[1] + manualFlaggedImages[i] + "/Slices To Use.csv";
-    	toOpen = directories[0] + manualFlaggedImages[i] + ".tif";
+		slicesToUseFile = directories[1] + File.getNameWithoutExtension(manualFlaggedImages[i]) + "/Slices To Use.csv";
+		toOpen = directories[0] + manualFlaggedImages[i];
 		if(File.exists(slicesToUseFile)==0 && File.exists(toOpen)==1) {
 			proceed = true;	
 		}
 
-        if(proceed = true) {
+        if(proceed == true) {
 
             print("Manually selecting frames for", File.getNameWithoutExtension(toOpen));
             
@@ -601,10 +600,10 @@ function manualFrameSelection(directories, manualFlaggedImages, iniValues, frame
             //Go through each timepoint
             for(currentTimepoint=1; currentTimepoint<timepoints+1; k++) {	
 				
-				renameAs = "Timepoint"
+				renameAs = "Timepoint";
 				timepointFramestoKeep = manuallyApproveTimepoints(toOpen, currentTimepoint, iniValues, framesToKeep, renameAs);
 
-				framesPerTimepoint = framesPerPlane*numberOfZPlanes
+				framesPerTimepoint = framesPerPlane*numberOfZPlanes;
 				timepointFramesToKeepOverallPosition = addPreviousFramesToManualSelection(currentTimepoint, framesPerTimepoint, timepointFramestoKeep);
 
 			}
@@ -1250,8 +1249,7 @@ function getTableColumn(fileLoc, colName) {
 
 }
 
-
-function createProcessedImageStacks(imagesToProcessArray, directories, iniValues, preProcStringToFind, blurDetectorFrames, diffDetectorFrames, autoProcessed, manualProcessed, imageName) {
+function createProcessedImageStacks(imagesToProcessArray, directories, iniValues, preProcStringToFind, blurDetectorFrames, diffDetectorFrames, autoProcessed, manualProcessed, imageName, autoPassedQA, manualPassedQA) {
 
 	if(imagesToProcessArray[0] != 0) {
 
@@ -1293,6 +1291,9 @@ function createProcessedImageStacks(imagesToProcessArray, directories, iniValues
 			} else {
 				autoProcessed[imageNameIndex] = 1;
 			}
+
+			//Save these arrays into a table
+			saveImagesToUseTable(imageName, autoProcessed, autoPassedQA, manualProcessed, manualPassedQA, directories);
 			
 		}
 	
@@ -1302,45 +1303,30 @@ function createProcessedImageStacks(imagesToProcessArray, directories, iniValues
 
 }
 
-function appendIfNew(currentArray, checkInArray, arrayToUpdate, arrayToUpdateWith) {
+function findMatchInArray(valueToFind, checkInArray) {
 
-	//For each element in our array
-	for(currElement = 0; currElement < currentArray.length; currElement++) {
-		elementFound = false;
-
-		//Check in the other arrays
-		for(checkAgainst = 0; checkAgainst < checkInArray.length; checkAgainst ++) {
-
-			//If one of the images we just QAd is in the existing table, we update the kept
-			//and manualFlag values for that image
-			if(currentArray[currElement] == checkInArray[checkAgainst]) {
-				arrayToUpdate[checkAgainst] = arrayToUpdateWith[currElement];
-				elementFound = true;
-				break;
-			}
-		}
-
-		//If the image we QAd wasn't in the existing table, append this to the output from the
-		//existing table
-		if(elementFound == false) {
-			arrayToUpdate = Array.concat(arrayToUpdate, newArray(arrayToUpdateWith[currElement]));
+	//Check in the other arrays
+	for(checkAgainst = 0; checkAgainst < checkInArray.length; checkAgainst ++) {
+		if(valueToFind == checkInArray[checkAgainst]) {
+			return checkAgainst;
 		}
 	}
 
-	return arrayToUpdate;
+	return -1;
 
 }
 
-function updateImagesToUseArray(tableLoc, colName, checkArray, checkAgainst, fillWith) {
-
-	//Retrieve columns from our images to use table telling us what stage our images are at
-	currentArray = getTableColumn(tableLoc, colName);
-	currentArrayToFill = newArray(checkAgainst.length);
-	Array.fill(currentArrayToFill, fillWith);
-	currentArray = appendIfNew(checkAgainst, checkArray, currentArray, currentArrayToFill);
-
-	return currentArray;
-
+function saveImagesToUseTable(imageName, autoProcessed, autoPassedQA, manualProcessed, manualPassedQA, directories) {
+	//Save these arrays into a table
+	Table.create("Images to Use.csv");
+	Table.setColumn("Image Name", imageName);
+	Table.setColumn("Auto Processing", autoProcessed);
+	Table.setColumn("Auto QA Passed", autoPassedQA);
+	Table.setColumn("Manual Processing", manualProcessed);
+	Table.setColumn("Manual QA Passed", manualPassedQA);
+	Table.save(directories[1] + "Images to Use.csv");
+	selectWindow("Images to Use.csv");
+	run("Close");
 }
 
 //Get user input into where our working directory, and image storage directories, reside
@@ -1385,24 +1371,29 @@ imagesToUseFile = directories[1] +  "Images to Use.csv";
 //If the file exists, it means we've run at least this step before, so retrieve the stage all images are at
 if(File.exists(imagesToUseFile) == 1) {
 
-	//Retrieve columns from our images to use table telling us what stage our images are at, and if we have images in
-	//imagesInput that aren't in the imageName column, we append an extra element to our arrays with the default values
-	//and then do this with the image name to imageName
+	//Retrieve our existing columns
 	imageName = getTableColumn(imagesToUseFile, "Image Name");
+	autoProcessed = getTableColumn(imagesToUseFile, "Auto Processing");
+	autoPassedQA = getTableColumn(imagesToUseFile, "Auto QA Passed");
+	manualProcessed = getTableColumn(imagesToUseFile, "Manual Processing");
+	manualPassedQA = getTableColumn(imagesToUseFile, "Manual QA Passed");
 
-	autoProcessed = updateImagesToUseArray(imagesToUseFile, "Auto Processing", imageName, imagesInput, 0);
+	//If there is an image in our input folder that isn't in our table,
+	//append a new default value to all the processing steps for that image
+	for(index = 0; index < imagesInput.length; index++) {
+		foundIndex = findMatchInArray(imagesInput[index], imageName);
+		if(foundIndex == -1) {
+			imageName = Array.concat(imageName, newArray(imagesInput[index]));
+			autoProcessed = Array.concat(autoProcessed, newArray(0));
+			autoPassedQA = Array.concat(autoPassedQA, newArray(-1));
+			manualProcessed = Array.concat(manualProcessed, newArray(0));
+			manualPassedQA = Array.concat(manualPassedQA, newArray(-1));
 
-	//-1 means not attempted yet
-	autoPassedQA = updateImagesToUseArray(imagesToUseFile, "Auto QA Passed", imageName, imagesInput, -1);
-
-	manualProcessed = updateImagesToUseArray(imagesToUseFile,"Manual Processing", imageName, imagesInput, 0);
-
-	manualPassedQA = updateImagesToUseArray(imagesToUseFile, "Manual QA Passed", imageName, imagesInput, -1);
-
-	imageName = appendIfNew(imagesInput, imageName, imageName, imagesInput);
+		}
+	}
 
 	//Return an array of the images that are flagged for manual processing
-	manualFlaggedImages = getManualFlaggedImages(imageName, autoProcessed, autoPassedQA, manualProcessed);
+	manualFlaggedImages = getManualFlaggedImages(imageName, autoProcessed, autoPassedQA, manualProcessed, manualPassedQA);
 
 //If we don't have the file, we haven't run this yet
 } else {
@@ -1445,17 +1436,6 @@ manualFrameSelectionWrapper(directories, manualFlaggedImages, iniValues, diffDet
 //are what we process, else we do non-manually flagged images
 imagesToProcessArray = imagesToProcess(manualFlaggedImages, directories);
 
-createProcessedImageStacks(imagesToProcessArray, directories, iniValues, preProcStringToFind, blurDetectorFrames, diffDetectorFrames, autoProcessed, manualProcessed, imageName);
-
-//Save these arrays into a table
-Table.create("Images to Use.csv");
-Table.setColumn("Image Name", imageName);
-Table.setColumn("Auto Processing", autoProcessed);
-Table.setColumn("Auto QA Passed", autoPassedQA);
-Table.setColumn("Manual Processing", manualProcessed);
-Table.setColumn("Manual QA Passed", manualPassedQA);
-Table.save(directories[1] + "Images to Use.csv");
-selectWindow("Images to Use.csv");
-run("Close");
+createProcessedImageStacks(imagesToProcessArray, directories, iniValues, preProcStringToFind, blurDetectorFrames, diffDetectorFrames, autoProcessed, manualProcessed, imageName, autoPassedQA, manualPassedQA);
 
 print("Image processing complete");

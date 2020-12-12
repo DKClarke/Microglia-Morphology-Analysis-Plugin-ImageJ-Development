@@ -204,31 +204,6 @@ function getPreprocessingInputs() {
 //This function takes an input array, and removes all the 0's in it, outputting 
 //it as the output array which must be passed in as an argument
 
-
-//Replace this with the new method Array.deleteValue
-function removeZeros(inputArray) {
-
-	//Loop through the input array, if the value isn't a 0, we place that in our 
-	//output array (which should be of length 1) before then concatenating an 
-	//array of length 1 to it to add another location to store another non-zero 
-	//value from the input array
-    output = newArray(1);
-	count = 0;
-	for(i=0; i<inputArray.length; i++) {
-		if(inputArray[i]!=0) {
-			currentIndex=output.length-1;
-			if(count > 0) {
-				appendArray = newArray(1);
-				output = Array.concat(output, appendArray);
-			}
-			output[count] = inputArray[i];
-			count += 1;
-		}
-	}
-
-	return output;
-}
-
 //Function finds all files that contain "substring" in the path "directoryname" 
 //"fileLocations" is an array that is passed in to fill with paths that contain substring
 function listFilesAndFilesSubDirectories(directoryName, subString) {

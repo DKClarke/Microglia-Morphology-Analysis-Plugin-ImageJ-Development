@@ -31,31 +31,6 @@ function getTableColumn(fileLoc, colName) {
 
 }
 
-//This function takes an input array, and removes all the 0's in it, outputting 
-//it as the output array which must be passed in as an argument
-function removeZeros(inputArray) {
-
-	//Loop through the input array, if the value isn't a 0, we place that in our 
-	//output array (which should be of length 1) before then concatenating an 
-	//array of length 1 to it to add another location to store another non-zero 
-	//value from the input array
-    output = newArray(1);
-	count = 0;
-	for(i=0; i<inputArray.length; i++) {
-		if(inputArray[i]!=0) {
-			currentIndex=output.length-1;
-			if(count > 0) {
-				appendArray = newArray(1);
-				output = Array.concat(output, appendArray);
-			}
-			output[count] = inputArray[i];
-			count += 1;
-		}
-	}
-
-	return output;
-}
-
 function getWorkingAndStorageDirectories(){
 
     Dialog.create("Pick Directory");
@@ -131,7 +106,7 @@ function listFilesAndFilesSubDirectories(directoryName, subString) {
 	}
 
 	//Create a new array that we fill with all non zero values of fileLocations
-	output = removeZeros(fileLocations);
+	output = Array.deleteValue(fileLocations, 0);
 
 	//Then return the output array
 	return output;

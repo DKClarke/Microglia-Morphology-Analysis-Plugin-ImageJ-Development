@@ -1,3 +1,132 @@
+function makeDirectories(directories) {
+
+    //Here we make our working directories by looping through our folder names, 
+    //concatenating them to our main parent directory
+    //and making them if they don't already exist
+    for(i=0; i<directories.length; i++) {
+        if(File.exists(directories[i])==0) {
+            File.makeDirectory(directories[i]);
+            print('Made directory ', directories[i]);
+        } else {
+        	print('Directory', directories[i], 'already exists');
+        }
+    }
+}
+
+function getOrCreateTableColumn(tableLoc, columnName, defaultValue, defaultLength) {
+	if(File.exists(tableLoc) == 1) {
+		outputArray = getTableColumn(tableLoc, columnName);
+	} else {
+		outputArray = newArray(defaultLength);
+		Array.fill(outputArray, defaultValue);
+	}
+
+	return outputArray;
+}
+
+function proceedWithCellDetection(autoPassedQA, manualPassedQA, substacksMade, substacksPossible) {
+
+	proceed = false;
+
+	passedQA = false;
+	if(autoPassedQA[currImage] == 1 || manualPassedQA[currImage] == 1) {
+		passedQA = true;
+	}
+
+	madeAllSubstacks = true;
+	if(substacksMade[currImage] == -1 || (substacksPossible[currImage] == substacksMade[currImage])){
+		madeAllSubstacks = false;
+	}
+
+	if(passedQA == true && madeAllSubstacks == false) {
+		proceed = true;
+	}
+
+	return proceed;
+
+}
+
+function getNoSubstacks(imageName, directories, substacksPossible, iniValues, preProcStringToFind, zBuffer) {
+			
+	//If the image was kept, count how many 10um thick substacks we can make with at least
+	//10um spacing between them, and 10um from the bottom and top of the stack
+	imageNameRaw = File.getNameWithoutExtesion(imageName);
+	imagePath = directories[1]+imageNameRaw+"/"+imageNameRaw+" processed.tif";
+
+	if(substacksPossible == -1) {
+
+		timepoints = openAndGetImageTimepoints(imagePath, iniValues, 'Morphology');
+		selectWindow(File.getName(filePath));
+		run("Close");
+		
+		//Calculate how much Z depth there is in the stack
+		zSize = iniValues[3] * timepoints * iniValues[2];
+
+		//Calculate how many 10um thick substacks we can make from this stack, including a user defined buffer size
+		//between substacks
+		noSubstacks = floor(zSize / (zBuffer+10));
+
+	} else {
+		noSubstacks = substacksPossible;
+	}
+
+	return noSubstacks;
+
+}
+
+function getSlicesForEachSubstack(noSubstacks, zBuffer) {
+	//Fill maskGenerationArray with a string of the range of z planes to include in each substack
+	maskGenerationArray = newArray(noSubstacks);
+	for(currSubstack = 0; currSubstack < noSubstacks; currSubstack++){
+		//Calculate what slices to start and end at for each substack
+		startZ = (zBuffer * (currSubstack+1)) + (currSubstack * 10);
+		maskGenerationArray[currSubstack] = toString(startZ) + '-' + toString(startZ + 10);
+	}
+
+	return maskGenerationArray;
+}
+
+function getMaximaCoordinates(imagePath, currMaskGenerationArray) {
+	//Open the processed image, make a substack, max project it
+	open(imagePath);
+	if(is("Inverting LUT")==true) {
+		run("Invert LUT");
+	}
+
+	rename('Raw');
+	run("Make Substack...", " slices="+currMaskGenerationArray+"");
+	selectWindow('Raw');
+	run("Z Project...", "projection=[Average Intensity]");
+	selectWindow("AVG_"+'Raw');
+	rename("AVG");
+				
+	//We use a max projection of the chunk to look for our cells, and we 
+	//set its calibration to pixels so that the coordinates we retrieve 
+	//are accurate as imageJ when plotting points plots them according 
+	//to pixel coordinates
+	getDimensions(width, height, channels, slices, frames);
+	run("Properties...", "channels="+channels+" slices="+slices+" frames="+frames+" unit=pixels pixel_width=1 pixel_height=1 voxel_depth=1.0000000");
+	run("8-bit");
+	run("Clear Results");
+		
+	//We look for cells using the fina maxima function and ouput a list
+	//of the maxima and save these as coordinates
+	run("Find Maxima...", "noise=50 output=[Maxima Within Tolerance] exclude");
+	if(is("Inverting LUT")==true) {
+		run("Invert LUT");
+	}
+	selectWindow("AVG");
+	run("Find Maxima...", "noise=50 output=List exclude");
+	selectWindow("Results");
+	numbResults = nResults;
+	newX = Table.getColumn("X");
+	newY = Table.getColumn("Y");
+	run("Close");
+	close("*");
+
+	return Array.concat(numbResults, newX, newY);
+
+}
 
 //These folder names are where we store various outputs from the processing 
 //(that we don't need for preprocessing)
@@ -6,7 +135,6 @@ storageFolders=newArray("Cell Coordinates/", "Cell Coordinate Masks/",
 
 //Set the size of the square to be drawn around each cell in um
 LRSize = 120;
-
 
 ////////////////////////////////////////////////////////////////////////////////	
 //////////////////////////////Cell Position Marking/////////////////////////////
@@ -31,266 +159,107 @@ autoPassedQA = getTableColumn(imagesToUseFile, "Auto QA Passed");
 manualProcessed = getTableColumn(imagesToUseFile, "Manual Processing");
 manualPassedQA = getTableColumn(imagesToUseFile, "Manual QA Passed");
 
-for(currImage = 0; currImage < imageName.length; currImage++) {
-    if(autoPassedQA[currImage] == 1 || manualPassedQA[currImage] == 1) {
+//This is an array with the strings that come just before the information we want to retrieve from the ini file.
+iniTextStringsPre = newArray("x.pixel.sz = ", "y.pixel.sz = ", "z.spacing = ", "no.of.planes = ", "frames.per.plane = ");
 
-        //If the image was kept, count how many 10um thick substacks we can make with at least
-        //10um spacing between them, and 10um from the bottom and top of the stack
-        run("TIFF Virtual Stack...", "open=["+directories[1]+File.getNameWithoutExtension(imageName[currImage])+"/"+File.getNameWithoutExtension(imageName[currImage])+" processed.tif]");
-        getVoxelSize(vWidth, vHeight, vDepth, vUnit);
-        
-        //Calculate how much Z depth there is in the stack
-        zSize = nSlices*vDepth;
+//Array to store the values we need to calibrate our image with
+iniValues =  getIniData(directories[3], iniTextStringsPre);
+//Index 0 is xPxlSz, then yPxlSz, zPxlSz, ZperT, FperZ
 
-        //Calculate how many 10um thick substacks we can make from this stack, including a user defined buffer size
-        //between substacks
-        noSubstacks = floor(zSize / (zBuffer+10));
+//Point to the table where we store the status of our images in the processing pipeline
+maskGenerationStatusLoc = directories[1] +  "Mask Generation Status.csv";
 
-        //Fill maskGenerationArray with a string of the range of z planes to include in each substack
-        maskGenerationArray = newArray(noSubstacks);
-        for(currSubstack = 0; currSubstack < noSubstacks; currSubstack++){
-            //Calculate what 
-            startZ = (zBuffer * (currSubstack+1)) + (currSubstack * 10);
-            maskGenerationArray[currSubstack] = toString(startZ) + '-' + toString(startZ + 10);
-        }
+//If the file exists, it means we've run at least this step before, so retrieve the stage all images are at
+if(File.exists(maskGenerationStatusLoc) == 1) {
 
-    }
+	//Retrieve our existing columns
+	imageNameMasks = getTableColumn(maskGenerationStatusLoc, "Image Name");
+
+//If we don't have the file, we haven't run this yet
+} else {
+
+	//Set our arrays to their default values
+	imageNameMasks = imageName;
+
 }
 
+substacksPossible = getOrCreateTableColumn(maskGenerationStatusLoc, "Number of Substacks to Make", -1, imageName.length);
+substacksMade = getOrCreateTableColumn(maskGenerationStatusLoc, "Number of Substacks Made", -1, imageName.length);
 
-		//Here we loop through all the images in the images to use table
-		//No counts stores how many substacks we can make from our image
-		toConcat = newArray(1);
-		finalImagestoUseArray = newArray(1);
-		noStacks = newArray(1);
-		noStacksRaw = newArray(images.length);
-		count = 0;
-		for(row = 0; row < images.length; row++) {
-			
-			//If we kept the image (and have analysed it)
-			if(kept[row] == 1) {
+for(currImage = 0; currImage < imageName.length; currImage++) {
 
-				//If the image was kept, count how many 10um thick substacks we can make with at least
-				//10um spacing between them, and 10um from the bottom and top of the stack
-				run("TIFF Virtual Stack...", "open=["+directories[1]+images[row]+"/"+images[row]+" processed.tif]");
-				getVoxelSize(vWidth, vHeight, vDepth, vUnit);
-				zSize = nSlices*vDepth;
-				counting = 0;
-				for(currZ = 10; currZ < zSize; currZ++) {
-					if(currZ%20 == 0 && currZ <= (zSize-30)) {
-						counting = counting+1;
-					}
-				}
+	proceed = proceedWithCellDetection(autoPassedQA, manualPassedQA, substacksMade, substacksPossible);
 
-				//Fill maskGenerationArray with a string of the range of z planes to include in each substack
-				countingTwo = 0;
-				maskGenerationArray = newArray(counting);
-				for(currZ = 10; currZ < zSize; currZ++) {
-					if(currZ%20 == 0 && currZ <= (zSize-30)) {
-						maskGenerationArray[countingTwo] = toString(currZ)+"-"+toString((currZ+10));
-						countingTwo = countingTwo + 1;
-					}
-				}
+	if(proceed == true) {
 
-				noStacksRaw[row] = maskGenerationArray.length;
+		subStacksPossible[currImage] = getNoSubstacks(imageName[currImage], directories, substacksPossible[currImage], iniValues, 'Morphology', zBuffer);
 
-				//For each substack, check if we've made cell locations
-				checkIt = false;
-				for(i0 = 0; i0<maskGenerationArray.length; i0++) {
-			
-					stringToSave = "Substack ("+maskGenerationArray[i0]+") positions marked"; 
+		maskGenerationArray = getSlicesForEachSubstack(substacksPossible[currImage], zBuffer);
 
-					//Check if we've already generated cell locations for this substack
-					//for this image
-					if(File.exists(directories[1]+images[row]+"/Cell Coordinate Masks/"+stringToSave+".txt")==0) {
-						checkIt = true;
-						i0 = 1e99;
-					}
-				}
+		//Here we make any storage folders that aren't related to TCS and 
+		//haven't already been made
 
-				//If we haven't got all the coordinates for every substack for this image
-				if(checkIt== true) {
-				
-					//If we're not on the first image, we concatenate our finalImagesToUseArray with our toConcat array
-					if(count!=0) {
-						finalImagestoUseArray = Array.concat(finalImagestoUseArray, toConcat);
-						noStacks = Array.concat(noStacks, toConcat);
-					}
+		imageNameRaw = File.getNameWithoutExtension(imageName[currImage]);
+		makeCellDetectionFolders(storageFolders, directories, imageNameRaw));
 
-					finalImagestoUseArray[count] = directories[1]+images[row]+"/"+images[row]+" processed";
+		cellPositionMarkingLoc = directories[1] + imageNameRaw + "/Cell Coordinate Masks/Cell Position Marking.csv";
 
-					//Add how many substacks we can make for this image
-					noStacks[count] = maskGenerationArray.length;
-					
-					//Increase our count by one
-					count++;
-				}
-			} else {
-				noStacksRaw[row] = 0;
+		substackNames = getOrCreateTableColumn(cellPositionMarkingLoc, "Substack", -1, substacksPossible[currImage]);
+		badReg = getOrCreateTableColumn(cellPositionMarkingLoc, "Bad Registration", -1, substacksPossible[currImage]);
+		badDetection = getOrCreateTableColumn(cellPositionMarkingLoc, "Bad Detection", -1, substacksPossible[currImage]);
+		processed = getOrCreateTableColumn(cellPositionMarkingLoc, "Processed", -1, substacksPossible[currImage]);
+		qcValue = getOrCreateTableColumn(cellPositionMarkingLoc, "QC", -1, substacksPossible[currImage]);
+
+		if(substackNames[0] == -1) {
+			for(currSubstack = 0; currSubstack < substacksPossible[currImage]; currSubstack++) {
+				substackNames[currSubstack] = maskGenerationArray[currSubstack];
 			}
 		}
 
-		if(finalImagestoUseArray[0] != 0) {
-			//Loop through the images that we want to calculate our motility indices for
-			for(i=0; i<finalImagestoUseArray.length; i++) {
+		for(currSubstack = 0; currSubstack < substacksPossible[currImage]; currSubstack++) {
+
+			if(processed[currSubstack] == -1) {
+
+				imagePath = directories[1] + imageNameRaw + "/" + ImageNameRaw +" processed.tif";
+				unformattedLocations = getMaximaCoordinates(imagePath, maskGenerationArray[currSubstack]);
+
+				cutIndex = unformattedLocations[0]+1
+				newX = Array.slice(unformattedLocations, 1, cutIndex);
+				newY = Array.slice(unformattedLocations, cutIndex);
 	
-				Housekeeping();
-			
-				//Work out the animal and timepoint labels for the current image based on its name
-				imageNames = newArray(4);
-				print(finalImagestoUseArray[i]);
-				procLoc = indexOf(finalImagestoUseArray[i], " processed");
-				forUse = substring(finalImagestoUseArray[i], 0, procLoc) + ".tif";
-			  	getAnimalTimepointInfo(imageNames, forUse);
-				
-				//Look for the files in the cell coordinates masks folder for that image
-				maskFolderFiles = getFileList(directories[1] + imageNames[3] + "/Cell Coordinate Masks/");
-		
-		      	//Set found to 0
-				found = 0;
-		      
-		     	//Loop through the files and if we find a .txt file (an indicator that 
-		      	//we've previuosly marked coordinates for this image) then we add 1 to 
-		      	//found
-				for(i0 = 0; i0<maskFolderFiles.length; i0++) {
-					if(indexOf(maskFolderFiles[i0], ".txt")>0) {
-						found++;
-					}
-				}
-				
-				//If found doesn't equal the number of stacks we can make for this image (i.e. we haven't marked coordinates for all
-				//substacks of out input image, even if we have for some) then we continue
-				if(found!=noStacks[i]) {		
-					
-					//Here we make any storage folders that aren't related to TCS and 
-					//haven't already been made
-					for(i0=0; i0<storageFolders.length; i0++) {
-						dirToMake=directories[1]+imageNames[3]+"/"+storageFolders[i0];
-						if(File.exists(dirToMake)==0) {
-							File.makeDirectory(dirToMake);
-						}
-					}	
-				
-					//If the cell position marking table isn't open, we create it
-					if(isOpen("Cell Position Marking")==0) {
-						Table.create("Cell Position Marking");
-					} else {
-						Table.reset("Cell Position Marking");
-					}
-						
-					//Create an array here of the columns that will be / are in the cell position marking table
-					TableColumns = newArray("Substack", "Bad Registration", "Bad Detection", "Processed", "QC");
-						                        
-					//TableValues is an array we'll fill with the values from any existing cell position marking table for this image
-					TableValues = newArray(noStacks[i]*TableColumns.length);
-						
-					//TableResultsRefs is an array of the location where we would find any
-					//previuosly existing table, repeated for each column
-					TableResultsRefs = newArray(directories[1] + imageNames[3] + "/Cell Coordinate Masks/Cell Position Marking.csv", 
-						directories[1] + imageNames[3] + "/Cell Coordinate Masks/Cell Position Marking.csv", 
-						directories[1] + imageNames[3] +  "/Cell Coordinate Masks/Cell Position Marking.csv", 
-						directories[1] + imageNames[3] + "/Cell Coordinate Masks/Cell Position Marking.csv", 
-						directories[1] + imageNames[3] + "/Cell Coordinate Masks/Cell Position Marking.csv");
-							
-					//This tells the function whether the results we're getting are strings
-					TableResultsAreStrings = newArray(true, false, false, false, false);
-						
-					//Run the fillArray function to fill TableValues
-					fillArray(TableValues, TableResultsRefs, TableColumns, TableResultsAreStrings, true);
-				
-					//Here we fill our current or new cell position marking table with data 
-					//from our TCSValues array
-					selectWindow("Cell Position Marking");
-					for(i0=0; i0<noStacks[i]; i0++) {
-						for(i1=0; i1<TableColumns.length; i1++) {
-							Table.set(TableColumns[i1], i0, TableValues[(noStacks[i]*i1)+i0]);
-						}
-					}
-	
-					subName = newArray(noStacks[i]);
-					procForTable = newArray(noStacks[i]);
-				
-					//We loop through each substack now
-					for(i0=0; i0<noStacks[i]; i0++) {
-				
-						imgName="Substack ("+maskGenerationArray[i0]+")"; 
-						stringToSave = "Substack ("+maskGenerationArray[i0]+") positions marked"; 
-						subName[i0] = "Substack (" +maskGenerationArray[i0]+ ")";
-	
-						if(File.exists(directories[1] + imageNames[3] + "/Cell Coordinate Masks/"+stringToSave+".txt")==1) {
-							procForTable[i0] = 1;
-						//Check if we've already generated cell locations for this substack for this image
-						} else {
-							print("Marking ", imageNames[3], " at ", imgName);
-								
-							//Open the processed image, make a substack, max project it
-							open(directories[1] + imageNames[3] + "/" + imageNames[3] +" processed.tif");
-							if(is("Inverting LUT")==true) {
-								run("Invert LUT");
-							}
-	
-							rename(imageNames[3]);
-							run("Make Substack...", " slices="+maskGenerationArray[i0]+"");
-							selectWindow(imgName);
-							run("Z Project...", "projection=[Average Intensity]");
-							selectWindow("AVG_"+imgName);
-							rename("AVG");
-										
-							//We use a max projection of the chunk to look for our cells, and we 
-							//set its calibration to pixels so that the coordinates we retrieve 
-							//are accurate as imageJ when plotting points plots them according 
-							//to pixel coordinates
-			
-							getDimensions(width, height, channels, slices, frames);
-							run("Properties...", "channels="+channels+" slices="+slices+" frames="+frames+" unit=pixels pixel_width=1 pixel_height=1 voxel_depth=1.0000000");
-							run("8-bit");
-							run("Clear Results");
-								
-							//We look for cells using the fina maxima function and ouput a list
-							//of the maxima and save these as coordinates
-							run("Find Maxima...", "noise=50 output=[Maxima Within Tolerance] exclude");
-							if(is("Inverting LUT")==true) {
-								run("Invert LUT");
-							}
-							selectWindow("AVG");
-							run("Find Maxima...", "noise=50 output=List exclude");
-							selectWindow("Results");
-							numbResults = nResults;
-							selectWindow("Results");
-							newX = Table.getColumn("X");
-							newY = Table.getColumn("Y");
-	
-							//If for this image we already have somas generated then get the corodinates of the somas for this substack and add these
-							//to the maxima locations, removing any soma locations that are already represented in the maxima locations
-							if(File.exists(directories[1]+imageNames[3]+"/Somas/")==1) {
-								somaFiles = getFileList(directories[1]+imageNames[3]+"/Somas/");
-								allX = newArray(somaFiles.length);
-								allY = newArray(somaFiles.length);
-								count = 0;
-								for(currSoma = 0; currSoma < somaFiles.length; currSoma++) {
-									if(indexOf(somaFiles[currSoma], imgName)>-1){
-										allX[count] = parseFloat(substring(somaFiles[currSoma], indexOf(somaFiles[currSoma], "x ") +1, indexOf(somaFiles[currSoma], " y")));
-										allY[count] = parseFloat(substring(somaFiles[currSoma], indexOf(somaFiles[currSoma], "y ") +1));
-										for(currNew = 0; currNew < numbResults; currNew++) {
-											if(newX[currNew] == allX[count] && newY[currNew] == allY[count]) {
-												allX[count] = 0;
-												allY[count] = 0;
-											}
-										}
-										count++;
-									}
+				//If for this image we already have somas generated then get the corodinates of the somas for this substack and add these
+				//to the maxima locations, removing any soma locations that are already represented in the maxima locations
+				if(File.exists(directories[1]+imageNames[3]+"/Somas/")==1) {
+					somaFiles = getFileList(directories[1]+imageNames[3]+"/Somas/");
+					allX = newArray(somaFiles.length);
+					allY = newArray(somaFiles.length);
+					count = 0;
+					for(currSoma = 0; currSoma < somaFiles.length; currSoma++) {
+						if(indexOf(somaFiles[currSoma], imgName)>-1){
+							allX[count] = parseFloat(substring(somaFiles[currSoma], indexOf(somaFiles[currSoma], "x ") +1, indexOf(somaFiles[currSoma], " y")));
+							allY[count] = parseFloat(substring(somaFiles[currSoma], indexOf(somaFiles[currSoma], "y ") +1));
+							for(currNew = 0; currNew < numbResults; currNew++) {
+								if(newX[currNew] == allX[count] && newY[currNew] == allY[count]) {
+									allX[count] = 0;
+									allY[count] = 0;
 								}
-	
-								//Remove zeros from our new coordinates
-								cleanX = newArray(1);
-								cleanX = removeZeros(allX, cleanX);		
-								cleanY = newArray(1);
-								cleanY = removeZeros(allY, cleanY);
-	
-								//Concatenate our new points (if any don't match) to our old points
-								newX = Array.concat(newX, cleanX);
-								newY = Array.concat(newY, cleanY);
 							}
+							count++;
+						}
+					}
+
+					//Remove zeros from our new coordinates
+					cleanX = newArray(1);
+					cleanX = removeZeros(allX, cleanX);		
+					cleanY = newArray(1);
+					cleanY = removeZeros(allY, cleanY);
+
+					//Concatenate our new points (if any don't match) to our old points
+					newX = Array.concat(newX, cleanX);
+					newY = Array.concat(newY, cleanY);
+
+					//Next step here is to create a function that will retrieve these soma coordinates and then appen whichever are novel or missing
+				}
 	
 							//Here we load in the coordinates file if it already exists and remove any of these additional points if they are already
 							//represented, then concatenate them

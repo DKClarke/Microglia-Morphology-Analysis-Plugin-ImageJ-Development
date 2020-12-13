@@ -34,7 +34,7 @@ function proceedWithCellDetection(autoPassedQA, manualPassedQA, substacksMade, s
 	}
 
 	madeAllSubstacks = true;
-	if(substacksMade[currImage] == -1 || (substacksPossible[currImage] == substacksMade[currImage])){
+	if(substacksMade[currImage] == 0 || (substacksPossible[currImage] == substacksMade[currImage])){
 		madeAllSubstacks = false;
 	}
 
@@ -122,10 +122,62 @@ function getMaximaCoordinates(imagePath, currMaskGenerationArray) {
 	newX = Table.getColumn("X");
 	newY = Table.getColumn("Y");
 	run("Close");
-	close("*");
 
 	return Array.concat(numbResults, newX, newY);
 
+}
+
+function saveSubstackStatusTable(substackNames, badReg, badDetection, processed, qcValue, saveLoc) {
+	//Save these arrays into a table
+	Table.create("Cell Position Marking.csv");
+	Table.setColumn("Substack", substackNames);
+	Table.setColumn("Bad Registration", badReg);
+	Table.setColumn("Bad Detection", badDetection);
+	Table.setColumn("Processed", processed);
+	Table.setColumn("QC", qcValue);
+	Table.save(saveLoc);
+	selectWindow("Cell Position Marking.csv");
+	run("Close");
+}
+
+function saveMaskGenerationStatusTable(imageNameMasks, substacksPossible, substacksMade, saveLoc) {
+	//Save these arrays into a table
+	Table.create("Mask Generation Status.csv");
+	Table.setColumn("Image Name", imageNameMasks);
+	Table.setColumn("Number of Substacks to Make", substacksPossible);
+	Table.setColumn("Number of Substacks Made", substacksMade);
+	Table.save(saveLoc);
+	selectWindow("Mask Generation Status.csv");
+	run("Close");
+}
+
+function fillAndSaveSubstackCoordinatesTable(currentMaskGen, newX, newY, directories, imageNameRaw) {
+					
+	//Store these coordinates in a substack specific table for the image
+	Table.create("CP coordinates for Substack (" + currentMaskGen + ").csv");
+	if(newX.length == 0) {
+		Table.setColumn("X", -1);
+		Table.setColumn("Y", -1);
+	} else {
+		Table.setColumn("X", newX);
+		Table.setColumn("Y", newY);
+	}
+
+	//Save this table
+	saveAs("Results", directories[1]+imageNameRaw+"/Cell Coordinates/CP coordinates for Substack (" + currentMaskGen + ").csv");
+	Table.close();
+
+}
+
+function saveMaximaImages(directories, imageNameRaw, currMaskGen) {
+	//Save the images we used to generate these maxima
+	selectWindow("AVG Maxima");
+	run("Select None");
+	saveAs("tiff", directories[1] + imageNameRaw + "/Cell Coordinate Masks/Automated CPs for Substack (" + currMaskGen + ").tif");
+	selectWindow("AVG");
+	run("Select None");
+	saveAs("tiff", directories[1] + imageNameRaw + "/Cell Coordinate Masks/CP mask for Substack (" + currMaskGen + ").tif");
+	close("*");
 }
 
 //These folder names are where we store various outputs from the processing 
@@ -135,11 +187,6 @@ storageFolders=newArray("Cell Coordinates/", "Cell Coordinate Masks/",
 
 //Set the size of the square to be drawn around each cell in um
 LRSize = 120;
-
-////////////////////////////////////////////////////////////////////////////////	
-//////////////////////////////Cell Position Marking/////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-
 
 //Get user input into where our working directory, and image storage directories, reside
 directories = getWorkingAndStorageDirectories();
@@ -154,9 +201,7 @@ if(File.exists(tableLoc) != 1) {
 
 //If we already have a table get out our existing status indicators
 imageName = getTableColumn(imagesToUseFile, "Image Name");
-autoProcessed = getTableColumn(imagesToUseFile, "Auto Processing");
 autoPassedQA = getTableColumn(imagesToUseFile, "Auto QA Passed");
-manualProcessed = getTableColumn(imagesToUseFile, "Manual Processing");
 manualPassedQA = getTableColumn(imagesToUseFile, "Manual QA Passed");
 
 //This is an array with the strings that come just before the information we want to retrieve from the ini file.
@@ -169,7 +214,8 @@ iniValues =  getIniData(directories[3], iniTextStringsPre);
 //Point to the table where we store the status of our images in the processing pipeline
 maskGenerationStatusLoc = directories[1] +  "Mask Generation Status.csv";
 
-//If the file exists, it means we've run at least this step before, so retrieve the stage all images are at
+//If a file declaring the status of all our images re: mask generation exists, get the image names
+//else make the array based on inputs
 if(File.exists(maskGenerationStatusLoc) == 1) {
 
 	//Retrieve our existing columns
@@ -183,148 +229,87 @@ if(File.exists(maskGenerationStatusLoc) == 1) {
 
 }
 
+//Retrieve the number of substacks to be made for each image, as well as the number we've already made - if the file doesn't
+//exist, set these defaults to -1 (not calculated) and 0
 substacksPossible = getOrCreateTableColumn(maskGenerationStatusLoc, "Number of Substacks to Make", -1, imageName.length);
-substacksMade = getOrCreateTableColumn(maskGenerationStatusLoc, "Number of Substacks Made", -1, imageName.length);
+substacksMade = getOrCreateTableColumn(maskGenerationStatusLoc, "Number of Substacks Made", 0, imageName.length);
 
+//For each image we're processing
 for(currImage = 0; currImage < imageName.length; currImage++) {
 
+	//Calculate if we're to detect cells for it - e.g. if it has passed QA, and we haven't made all the substacks for it
 	proceed = proceedWithCellDetection(autoPassedQA, manualPassedQA, substacksMade, substacksPossible);
 
 	if(proceed == true) {
 
+		//Calculate the number of substacks we can make for this image
 		subStacksPossible[currImage] = getNoSubstacks(imageName[currImage], directories, substacksPossible[currImage], iniValues, 'Morphology', zBuffer);
 
+		//Create an array storing the beginning and ending slices for each substack we're making
 		maskGenerationArray = getSlicesForEachSubstack(substacksPossible[currImage], zBuffer);
 
 		//Here we make any storage folders that aren't related to TCS and 
 		//haven't already been made
-
 		imageNameRaw = File.getNameWithoutExtension(imageName[currImage]);
 		makeCellDetectionFolders(storageFolders, directories, imageNameRaw));
 
+		//For our cell position marking table, get out our columns for this image - unless they don't exist in which case make
+		//them with defaults of -1
 		cellPositionMarkingLoc = directories[1] + imageNameRaw + "/Cell Coordinate Masks/Cell Position Marking.csv";
 
-		substackNames = getOrCreateTableColumn(cellPositionMarkingLoc, "Substack", -1, substacksPossible[currImage]);
 		badReg = getOrCreateTableColumn(cellPositionMarkingLoc, "Bad Registration", -1, substacksPossible[currImage]);
 		badDetection = getOrCreateTableColumn(cellPositionMarkingLoc, "Bad Detection", -1, substacksPossible[currImage]);
 		processed = getOrCreateTableColumn(cellPositionMarkingLoc, "Processed", -1, substacksPossible[currImage]);
 		qcValue = getOrCreateTableColumn(cellPositionMarkingLoc, "QC", -1, substacksPossible[currImage]);
 
-		if(substackNames[0] == -1) {
-			for(currSubstack = 0; currSubstack < substacksPossible[currImage]; currSubstack++) {
-				substackNames[currSubstack] = maskGenerationArray[currSubstack];
-			}
+		//If the table is new, fill the substackNames array with our maskGenerationArray values
+		if(File.exists(cellPositionMarkingLoc)!=1) {
+			substackNames = Array.copy(maskGenerationArray);
+		} else {
+			substackNames = getTableColumn(cellPositionMarkingLoc, Substack);
 		}
 
+		//For each substack we're making for this image
 		for(currSubstack = 0; currSubstack < substacksPossible[currImage]; currSubstack++) {
 
+			//If that substack hasn't been processed / made
 			if(processed[currSubstack] == -1) {
-
+				
+				//Retrieve the coordinates in x and y of the maxima in the average projection of the image
 				imagePath = directories[1] + imageNameRaw + "/" + ImageNameRaw +" processed.tif";
 				unformattedLocations = getMaximaCoordinates(imagePath, maskGenerationArray[currSubstack]);
 
 				cutIndex = unformattedLocations[0]+1
 				newX = Array.slice(unformattedLocations, 1, cutIndex);
 				newY = Array.slice(unformattedLocations, cutIndex);
-	
-				//If for this image we already have somas generated then get the corodinates of the somas for this substack and add these
-				//to the maxima locations, removing any soma locations that are already represented in the maxima locations
-				if(File.exists(directories[1]+imageNames[3]+"/Somas/")==1) {
-					somaFiles = getFileList(directories[1]+imageNames[3]+"/Somas/");
-					allX = newArray(somaFiles.length);
-					allY = newArray(somaFiles.length);
-					count = 0;
-					for(currSoma = 0; currSoma < somaFiles.length; currSoma++) {
-						if(indexOf(somaFiles[currSoma], imgName)>-1){
-							allX[count] = parseFloat(substring(somaFiles[currSoma], indexOf(somaFiles[currSoma], "x ") +1, indexOf(somaFiles[currSoma], " y")));
-							allY[count] = parseFloat(substring(somaFiles[currSoma], indexOf(somaFiles[currSoma], "y ") +1));
-							for(currNew = 0; currNew < numbResults; currNew++) {
-								if(newX[currNew] == allX[count] && newY[currNew] == allY[count]) {
-									allX[count] = 0;
-									allY[count] = 0;
-								}
-							}
-							count++;
-						}
-					}
 
-					//Remove zeros from our new coordinates
-					cleanX = newArray(1);
-					cleanX = removeZeros(allX, cleanX);		
-					cleanY = newArray(1);
-					cleanY = removeZeros(allY, cleanY);
+				//Save our coordinates
+				fillAndSaveSubstackCoordinatesTable(maskGenerationArray[currSubstack], newX, newY, directories, imageNameRaw);
 
-					//Concatenate our new points (if any don't match) to our old points
-					newX = Array.concat(newX, cleanX);
-					newY = Array.concat(newY, cleanY);
+				//Save our maxima images
+				saveMaximaImages(directories, imageNameRaw, maskGenerationArray[currSubstack]);
+				
+				//Close everything
+				Housekeeping();
 
-					//Next step here is to create a function that will retrieve these soma coordinates and then appen whichever are novel or missing
-				}
-	
-							//Here we load in the coordinates file if it already exists and remove any of these additional points if they are already
-							//represented, then concatenate them
-							if(File.exists(directories[1]+imageNames[3]+"/Cell Coordinates/CP coordinates for " + imgName + ".csv")==1) {
-								Table.open(directories[1]+imageNames[3]+"/Cell Coordinates/CP coordinates for " + imgName + ".csv");
-								selectWindow("CP coordinates for " + imgName + ".csv");
-								oldX = Table.getColumn("X");
-								oldY = Table.getColumn("Y");
-	
-								//Looping through our new points and comparing them to our existing points, if they're the same, set their values to 0
-								for(currRow = 0; currRow < oldX.length; currRow++) {
-									rX = oldX[currRow];
-									rY = oldY[currRow];
-									for(currResult = 0; currResult < newX.length; currResult++) {
-										if(newX[currResult] == rX && newY[currResult] == rY) {
-											oldX[currRow] = 0;
-											oldY[currRow] = 0;
-										}
-									}
-								}
-	
-								//Remove zeros from our new coordinates
-								cleanX = newArray(1);
-								cleanX = removeZeros(oldX, cleanX);		
-	
-								cleanY = newArray(1);
-								cleanY = removeZeros(oldY, cleanY);
-	
-								//Concatenate our new points (if any don't match) to our old points
-								newX = Array.concat(newX, cleanX);
-								newY = Array.concat(newY, cleanY);
-	
-							}
-	
-							//Create / reset a table to store our coordinates, set the X and Y columns appropriately, save
-							if(isOpen("CP coordinates for " + imgName + ".csv")==1) {
-								selectWindow("CP coordinates for " + imgName + ".csv");
-								Table.reset("CP coordinates for " + imgName + ".csv");
-							} else {
-								Table.create("CP coordinates for " + imgName + ".csv");
-							}
-	
-							selectWindow("CP coordinates for " + imgName + ".csv");
-							if(newX.length == 0) {
-								Table.setColumn("X", 1);
-								Table.setColumn("Y", 1);
-							} else {
-								Table.setColumn("X", newX);
-								Table.setColumn("Y", newY);
-							}
-								
-							saveAs("Results", directories[1]+imageNames[3]+"/Cell Coordinates/CP coordinates for " + imgName + ".csv");
-	
-							selectWindow("CP coordinates for " + imgName + ".csv");
-							Table.reset("CP coordinates for " + imgName + ".csv");
-								
-							selectWindow("AVG Maxima");
-							run("Select None");
-	
-							//Save the selections around the maxima and the image itself
-							saveAs("tiff", directories[1] + imageNames[3] + "/Cell Coordinate Masks/Automated CPs for Substack (" + maskGenerationArray[i0] + ").tif");
-							selectWindow("AVG");
-							run("Select None");
-							saveAs("tiff", directories[1] + imageNames[3] + "/Cell Coordinate Masks/CP mask for Substack (" + maskGenerationArray[i0] + ").tif");
-	
+				//Set our processed value for this substack to 1, and our substacksMade value for this image to whatever it was + 1
+				processed[currSubstack] = 1;
+				substacksMade[currImage] = substacksMade[currImage] + 1;
+
+				//Save our substack and image specific tables
+				saveSubstackStatusTable(substackNames, badReg, badDetection, processed, qcValue, cellPositionMarkingLoc);
+				saveMaskGenerationStatusTable(imageNameMasks, substacksPossible, substacksMade, maskGenerationStatusLoc);
+
+			}
+		}
+	}
+}
+
+
+
+
+
+
 							//Set the values in our cell position marking table according to the 
 							//image we've just processed, set processed to 1, save the table, and 
 							//lastly save a .txt file which we use to check quickly whether we've

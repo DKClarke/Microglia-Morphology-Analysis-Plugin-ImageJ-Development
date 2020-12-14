@@ -86,7 +86,24 @@ function getSlicesForEachSubstack(noSubstacks, zBuffer) {
 	return maskGenerationArray;
 }
 
-function getMaximaCoordinates(imagePath, currMaskGenerationArray) {
+function combineResultsCols(colNames) {
+	selectWindow("Results");
+	numbResults = nResults;
+	firstArray = newArray(1);
+	firstArray[0] = numbResults;
+	for(currCol = 0; currCol < colNames.length; currCol++) {
+		if(currCol == 0) {
+			outputArray = Array.concat(firstArray, Table.getColumn(colNames[currCol]));
+		} else {
+			outputArray = Array.concat(outputArray, Table.getColumn(colNames[currCol]));
+		}
+	}
+	run("Close");
+
+	return outputArray;
+}
+
+function getMaximaCoordinates(imagePath, currMaskGenerationArray, columnNames) {
 	//Open the processed image, make a substack, max project it
 	open(imagePath);
 	if(is("Inverting LUT")==true) {
@@ -117,13 +134,10 @@ function getMaximaCoordinates(imagePath, currMaskGenerationArray) {
 	}
 	selectWindow("AVG");
 	run("Find Maxima...", "noise=50 output=List exclude");
-	selectWindow("Results");
-	numbResults = nResults;
-	newX = Table.getColumn("X");
-	newY = Table.getColumn("Y");
-	run("Close");
 
-	return Array.concat(numbResults, newX, newY);
+	outputArray = combineResultsCols(columnNames);
+
+	return outputArray;
 
 }
 
@@ -178,6 +192,173 @@ function saveMaximaImages(directories, imageNameRaw, currMaskGen) {
 	run("Select None");
 	saveAs("tiff", directories[1] + imageNameRaw + "/Cell Coordinate Masks/CP mask for Substack (" + currMaskGen + ").tif");
 	close("*");
+}
+
+function detectSubstackCellsSaveSubstackImages(directories, imageNameRaw, maskGenerationValue) {
+
+	//Retrieve the coordinates in x and y of the maxima in the average projection of the image
+	imagePath = directories[1] + imageNameRaw + "/" + imageNameRaw +" processed.tif";
+	columnNames = newArray('X', 'Y');
+	unformattedLocations = getMaximaCoordinates(imagePath, maskGenerationValue, columnNames);
+
+	cutIndex = unformattedLocations[0]+1
+	newX = Array.slice(unformattedLocations, 1, cutIndex);
+	newY = Array.slice(unformattedLocations, cutIndex);
+
+	//Save our coordinates
+	fillAndSaveSubstackCoordinatesTable(maskGenerationValue, newX, newY, directories, imageNameRaw);
+
+	//Save our maxima images
+	saveMaximaImages(directories, imageNameRaw, maskGenerationValue);
+	
+	//Close everything
+	Housekeeping();
+
+}
+
+//This is a function that generates a waitForUser dialog with waitForUserDialog 
+//that then retrieves a checkbox value with the string checkboxString so that 
+//the user can check an image and then return feedback for a given string
+function userApproval(waitForUserDialog, dialogName, checkboxString) {
+
+	//We zoom into an image 3 times so that its bigger on the screen for the user 
+	//to check
+	for(i=0; i<3; i++) {
+		run("In [+]");
+	}
+
+	//Scale the image to fit, before exiting and displaying hidden images from 
+	//batch mode, autocontrasting the image, then waiting for the user				
+	run("Scale to Fit");					
+	setBatchMode("Exit and Display");
+	setOption("AutoContrast", true);
+	waitForUser(waitForUserDialog);
+
+	//Once exiting the wait for user dialog we ask the user to give feedback 
+	//through a dialog box and then return the checkbox boolean value						
+	Dialog.create(dialogName);
+	Dialog.addCheckbox(checkboxString, true);
+	Dialog.show();
+	output = Dialog.getCheckbox();
+	return output;
+}
+
+function readAndDisplayCellCoordinates(tableLoc, xColName, yColName, image) {
+
+	xPoints = getTableColumn(tableLoc, xColName);
+	yPoints = getTableColumn(tableLoc, yColName);
+
+	selectImage(imageID);
+	makeSelection("point", xPoints, yPoints);
+	setBatchMode("show");
+
+	return selectionType();
+}
+
+function openDisplayAndApproveCoordinates(imageLoc, tableLoc, renameTo) {
+				
+	//Open its cell placement masks image and the image that has the automated CPs
+	open(directories[1]+imageNameRaw"/Cell Coordinate Masks/CP mask for Substack ("+substackNames[currSubstack]+").tif");
+	if(is("Inverting LUT")==true) {
+		run("Invert LUT");
+	}
+
+	projectOn = getImageID();
+	areThereCoordinates = readAndDisplayCellCoordinates(tableLoc, 'X', 'Y', projectOn);
+
+	//If there are cell ROIs generated
+	if(areThereCoordinates != -1) {
+		roiManager("add");
+		selectImage(projectOn);
+		roiManager("select", 0);
+
+		//Ask the user whether these automated masks were generated well or not
+		goodCPs = userApproval("Check that the automated CP selection has worked", "CP Checking", "Automated CPs Acceptable?");
+
+	} else {
+		goodCPs = false;
+	}
+
+	selectImage(projectOn);
+	rename(renameTo);
+
+	return goodCPs;
+}
+
+function getBadCPReasons() {
+
+	//Ask the user to check what was wrong with the image and get whether it was bad registration,
+	//bad detection, or both
+	//run("Tile");
+	waitForUser("Check whats wrong with automated CP generation");
+
+	Dialog.create("What went wrong?");
+	Dialog.addCheckbox("Bad registration?", false);
+	Dialog.addCheckbox("Bad detection?", false);
+	Dialog.show();
+	badRegRaw = Dialog.getCheckbox();
+	badDetectionRaw = Dialog.getCheckbox();		
+
+	return newArray(badRegRaw, badDetectionRaw);
+
+}
+
+function userSelectMissedCells(renameTo) {
+					
+	//Set the tool to multipoint and ask the user to click on any cells the
+	//automatic placement generation missed
+	setTool("multipoint");
+	selectWindow(renameTo);
+	roiManager("Show All");
+	waitForUser("Click on cells that were missed by automatic detection, if any");
+
+	selectCells = selectionType();
+
+	return selectCells;
+
+}
+
+function getSelectionCoordinates() {
+
+	//Add the cell locations to the roiManager and measure them to get their X,Y coords
+	//in the results window
+	roiManager("add");
+	run("Set Measurements...", "centroid redirect=None decimal=0");
+	run("Clear Results");
+	roiManager("Select", 1);
+	roiManager("Measure");
+	
+	setBatchMode(true);
+	
+	outputArray = combineResultsCols(newArray('X', 'Y'));
+
+	return outputArray;
+
+}
+
+function addSelectedCoordinateStoExisting(tableLoc) {
+
+	outputArray = getSelectionCoordinates();
+	
+	cutIndex = outputArray[0]+1
+	selectedX = Array.slice(outputArray, 1, cutIndex);
+	selectedY = Array.slice(outputArray, cutIndex);
+
+	existingX = getTableColumn(tableLoc, 'X');
+	existingY = getTableColumn(tableLoc, 'Y');
+
+	//Concatenate the two - the original X and Y coords and the ones we've added
+	newX = Array.concat(selectedX, existingX);
+	newY = Array.concat(selectedY, existingY);
+
+	Table.read(tableLoc);
+	Table.setColumn("X", newX);
+	Table.setColumn("Y", newY);
+	Table.save(tableLoc);
+	toClose = Table.title();
+	selectWindow(toClose);
+	run("Close");
+
 }
 
 //These folder names are where we store various outputs from the processing 
@@ -238,9 +419,9 @@ substacksMade = getOrCreateTableColumn(maskGenerationStatusLoc, "Number of Subst
 for(currImage = 0; currImage < imageName.length; currImage++) {
 
 	//Calculate if we're to detect cells for it - e.g. if it has passed QA, and we haven't made all the substacks for it
-	proceed = proceedWithCellDetection(autoPassedQA, manualPassedQA, substacksMade, substacksPossible);
+	proceedCellDetection = proceedWithCellDetection(autoPassedQA, manualPassedQA, substacksMade, substacksPossible);
 
-	if(proceed == true) {
+	if(proceedCellDetection == true) {
 
 		//Calculate the number of substacks we can make for this image
 		subStacksPossible[currImage] = getNoSubstacks(imageName[currImage], directories, substacksPossible[currImage], iniValues, 'Morphology', zBuffer);
@@ -274,23 +455,8 @@ for(currImage = 0; currImage < imageName.length; currImage++) {
 
 			//If that substack hasn't been processed / made
 			if(processed[currSubstack] == -1) {
-				
-				//Retrieve the coordinates in x and y of the maxima in the average projection of the image
-				imagePath = directories[1] + imageNameRaw + "/" + ImageNameRaw +" processed.tif";
-				unformattedLocations = getMaximaCoordinates(imagePath, maskGenerationArray[currSubstack]);
 
-				cutIndex = unformattedLocations[0]+1
-				newX = Array.slice(unformattedLocations, 1, cutIndex);
-				newY = Array.slice(unformattedLocations, cutIndex);
-
-				//Save our coordinates
-				fillAndSaveSubstackCoordinatesTable(maskGenerationArray[currSubstack], newX, newY, directories, imageNameRaw);
-
-				//Save our maxima images
-				saveMaximaImages(directories, imageNameRaw, maskGenerationArray[currSubstack]);
-				
-				//Close everything
-				Housekeeping();
+				detectSubstackCellsSaveSubstackImages(directories, imageNameRaw, maskGenerationArray[currSubstack]);
 
 				//Set our processed value for this substack to 1, and our substacksMade value for this image to whatever it was + 1
 				processed[currSubstack] = 1;
@@ -305,251 +471,109 @@ for(currImage = 0; currImage < imageName.length; currImage++) {
 	}
 }
 
+//Retrieve the number of substacks to be made for each image, as well as the number we've already made - if the file doesn't
+//exist, set these defaults to -1 (not calculated) and 0
+substacksPossible = getOrCreateTableColumn(maskGenerationStatusLoc, "Number of Substacks to Make", -1, imageName.length);
+substacksMade = getOrCreateTableColumn(maskGenerationStatusLoc, "Number of Substacks Made", 0, imageName.length);
 
+//For each image we're processing
+for(currImage = 0; currImage < imageName.length; currImage++) {
 
+	//Here we make any storage folders that aren't related to TCS and 
+	//haven't already been made
+	imageNameRaw = File.getNameWithoutExtension(imageName[currImage]);
 
+	//For our cell position marking table, get out our columns for this image - unless they don't exist in which case make
+	//them with defaults of -1
+	cellPositionMarkingLoc = directories[1] + imageNameRaw + "/Cell Coordinate Masks/Cell Position Marking.csv";
 
+	badReg = getOrCreateTableColumn(cellPositionMarkingLoc, "Bad Registration", -1, substacksPossible[currImage]);
+	badDetection = getOrCreateTableColumn(cellPositionMarkingLoc, "Bad Detection", -1, substacksPossible[currImage]);
+	processed = getOrCreateTableColumn(cellPositionMarkingLoc, "Processed", -1, substacksPossible[currImage]);
+	qcValue = getOrCreateTableColumn(cellPositionMarkingLoc, "QC", -1, substacksPossible[currImage]);
 
-							//Set the values in our cell position marking table according to the 
-							//image we've just processed, set processed to 1, save the table, and 
-							//lastly save a .txt file which we use to check quickly whether we've
-							//processed this image as opening the table to read values for each
-							//image takes ages
-							File.saveString(stringToSave, directories[1]+imageNames[3]+"/Cell Coordinate Masks/"+stringToSave+".txt");
-							procForTable[i0] = 1;
-						}
-			
-						Housekeeping();
-	
+	//If the table is new, fill the substackNames array with our maskGenerationArray values
+	if(File.exists(cellPositionMarkingLoc)!=1) {
+		exit("Error - no Cell Position Marking.csv file for this image even though we're passed the cell detection stage")
+	} else {
+		substackNames = getTableColumn(cellPositionMarkingLoc, Substack);
+	}
+
+	for(currSubstack = 0; currSubstack < substackNames.length; currSubstack++) {
+
+		if(processed[currSubstack] == 1 & qcValue == -1) {
+
+			imageLoc = directories[1]+imageNameRaw"/Cell Coordinate Masks/CP mask for Substack ("+substackNames[currSubstack]+").tif";
+			tableLoc = directories[1]+imageNameRaw+"/Cell Coordinates/CP coordinates for Substack ("+substackNames[currSubstack]+").csv";
+			renameTo = 'coordImage'
+
+			goodCPs = openDisplayAndApproveCoordinates(imageLoc, tableLoc, renameTo);
+
+			if(goodCPs = false) {
+
+				reasonsArray = getBadCPReasons();
+				badReg = reasonsArray[0];
+				badDetection = reasonsArray[1];
+
+				if(badDetection == 1 && badReg == 0) {
+					
+					//Delete the automatically generated masks overlay
+					if(roiManager("count")>0) {
+						roiManager("deselect");
+						roiManager("delete");
 					}
-						
-					//Set the values in our cell position marking table according to the 
-					//image we've just processed, set processed to 1, save the table, and 
-					//lastly save a .txt file which we use to check quickly whether we've
-					//processed this image as opening the table to read values for each
-					//image takes ages
-					selectWindow("Cell Position Marking");
-					Table.setColumn("Substack", subName);
-					Table.setColumn("Processed", procForTable);
-					Table.save(directories[1] + imageNames[3] + "/Cell Coordinate Masks/Cell Position Marking.csv");
-					currName = Table.title;
-					Table.reset(currName);
-	
+					selectWindow("MAX");
+					
+					//Ask the user to click on cell bodies
+					setTool("multipoint");
+					setBatchMode("Exit and Display");
+					roiManager("show none");
+					run("Select None");
+					waitForUser("Click on cell bodies to select cells for analysis");
+					setBatchMode(true);
+					
+					//Once the user has selected all the cells, we add them to roiManager before measuring them with roiManager to get their coordinates
+					roiManager("add");
+					run("Set Measurements...", "centroid redirect=None decimal=0");
+					selectWindow("MAX");
+					roiManager("Select", 0);
+					run("Clear Results");
+					roiManager("Measure");
+					roiManager("delete");
+
+					//Save the coordinates of cell placements
+					selectWindow("Results");
+					saveAs("Results", directories[1]+imageNames[3]+"/Cell Coordinates/CP coordinates for " + imgName + ".csv");
+
+					//Set bad detection 0
+					badDetection = 0;
+
 				}
+
+			} else {
+
+				selectedCells = userSelectMissedCells(renameTo);
+				
+				//If the user clicked on additional cells
+				if(selectedCells !=-1) {
+
+					addSelectedCoordinateStoExisting(tableLoc);
+
+				}
+
 			}
-		}
-		Housekeeping();
 
-		toConcat = newArray(1);
-		finalImagestoUseArray = newArray(1);
-		count = 0;
-		for(row = 0; row < images.length; row++) {
-			
-			//If we kept the image (and have analysed it)
-			if(kept[row] == 1) {
-		
-				//We need to make 3 chunks of images to analyse - so we loop 3 times
-				//Create a substack of 10um deep using our dividingArraySlices array 
-				//(i.e. 21-30um, 51-60um, and 81-90um)
-				checkIt = false;
-				for(i0=0; i0<noStacksRaw[row]; i0++) {
-			
-					imgName="Substack ("+maskGenerationArray[i0]+")"; 
-					stringToSave = "Substack ("+maskGenerationArray[i0]+") positions marked"; 
+			Houekeeping();
 
-					//Check if we've already generated cell locations for this substack
-					//for this image
-					if(File.exists(directories[1] + images[row] + "/Cell Coordinate Masks/"+stringToSave+".txt")==1) {
-						checkIt = true;
-						i0 = 1e99;
-					}
-				}
-			
-				//If we haven't calculated the threshold for this image, add it to our finalImagestoUseArray
-				if(checkIt== true) {
-				
-					//If we're not on the first image, we concatenate our finalImagesToUseArray with our toConcat array
-					if(count!=0) {
-						finalImagestoUseArray = Array.concat(finalImagestoUseArray, toConcat);
-					}
 
-					//If the image contains " .tif" in the name we set finalImagestoUseArray[count] to the image name without it,
-					//else we just set it to that name
-					finalImagestoUseArray[count] = images[row];
-					
-					//Increase our count by one
-					count++;
-				}
-			}
 		}
 
-		if(finalImagestoUseArray[0] != 0) {
-			//Once we've automatically generated cell masks for all images, we then loop through
-			//all the images again
-			for (i=0; i<finalImagestoUseArray.length; i++) {
-				
-				//Work out the animal and timepoint labels for the current image based on 
-				//its name
-				imageNames = newArray(4);
-				forUse = finalImagestoUseArray[i] + ".tif";
-				getAnimalTimepointInfo(imageNames, forUse);
-				
-				print("Checking ", imageNames[3]);
-				
-				//Get the list of the files in our cell coordinates subfolder
-				coordinateFiles = getFileList(directories[1] + imageNames[3] + "/Cell Coordinates/");
-		
-				//If we have at least a file there (we've generated some coordinates)
-				if(coordinateFiles.length!=0) {
-			
-			
-					//If we have a cell position marking.csv window open already, just reset it instead of closing
-					if(isOpen("Cell Position Marking.csv")==true){
-						selectWindow("Cell Position Marking.csv");
-						Table.reset("Cell Position Marking.csv");
-					}
-					
-					//Open our cell position marking csv file
-					Table.open(directories[1] + imageNames[3] + "/Cell Coordinate Masks/Cell Position Marking.csv");
-					
-					//Get out the QC column from the cell position marking table and calculate its mean
-					selectWindow("Cell Position Marking.csv");
-					QCArray = Table.getColumn("QC");
-		
-					//Get out the QC values for the substacks that we actually have coordinate files for
-					QCArray = Array.slice(QCArray, 0, coordinateFiles.length);
-					Array.getStatistics(QCArray, QCMin, QCMax, QCMean, QCSD);
-					
-					//If the mean isn't 1 (i.e. not all substacks for this image have had their masks quality controlled
-					//since once they're QC'd we set the QC value to 1, therefore when they're all done the QC value mean
-					//should =1) then we proceed
-					if(QCMean!=1) {
-		
-						//Rename our window to without the .csv
-						selectWindow("Cell Position Marking.csv");
-						Table.rename("Cell Position Marking.csv", "Cell Position Marking");
-			
-						//Loop through the substacks we have coordinates for
-						for(i0=0; i0<coordinateFiles.length; i0++) {
-					
-							//Get the QC value of the current substack, and set the variables badReg and badDetection to 0
-							//(These variables set whether the image either didn't register properly or if the automatic
-							//mask detection was no good)
-							currentQC = QCArray[i0];
-							badReg = 0;
-							badDetection = 0;
+	}
+
+
 			
 							//If the current substack hasn't been quality controleld
 							if(currentQC==0) {
-								
-								//Create a variable to store the name of the current substack
-								imgName="Substack ("+maskGenerationArray[i0]+")"; 
-								print(directories[1]+imageNames[3]+"/Cell Coordinate Masks/CP mask for Substack ("+maskGenerationArray[i0]+").tif");
-				
-					
-								//Open its cell placement masks image and the image that has the automated CPs
-								open(directories[1]+imageNames[3]+"/Cell Coordinate Masks/CP mask for Substack ("+maskGenerationArray[i0]+").tif");
-								if(is("Inverting LUT")==true) {
-									run("Invert LUT");
-								}
-								
-								selectWindow("CP mask for Substack (" + maskGenerationArray[i0]+").tif");
-								rename("MAX");
-	
-								print(directories[1]+imageNames[3]+"/Cell Coordinates/CP coordinates for Substack ("+maskGenerationArray[i0]+").csv");
-								print(File.exists(directories[1]+imageNames[3]+"/Cell Coordinates/CP coordinates for Substack ("+maskGenerationArray[i0]+").csv"));
-	
-								Table.open(directories[1]+imageNames[3]+"/Cell Coordinates/CP coordinates for Substack ("+maskGenerationArray[i0]+").csv");
-								selectWindow("CP coordinates for Substack ("+maskGenerationArray[i0]+").csv");
-								xPoints = Table.getColumn("X");
-								yPoints = Table.getColumn("Y");
-	
-								selectWindow("MAX");
-								makeSelection("point", xPoints, yPoints);
-								setBatchMode("Exit and Display");
-		
-								//If there are cell ROIs generated
-								if(selectionType() != -1) {
-									roiManager("add");
-									selectWindow("MAX");
-									roiManager("select", 0);
-								
-									//Ask the user whether these automated masks were generated well or not
-									goodCPs = userApproval("Check that the automated CP selection has worked", "CP Checking", "Automated CPs Acceptable?");
-		
-								} else {
-									goodCPs = false;
-								}
-													
-								//If they're poor
-								if (goodCPs == false) {
-					
-					
-									//Ask the user to check what was wrong with the image and get whether it was bad registration,
-									//bad detection, or both
-									//run("Tile");
-									waitForUser("Check whats wrong with automated CP generation");
-			
-									Dialog.create("What went wrong?");
-									Dialog.addCheckbox("Bad registration?", false);
-									Dialog.addCheckbox("Bad detection?", false);
-									Dialog.show();
-									badRegRaw = Dialog.getCheckbox();
-									badDetectionRaw = Dialog.getCheckbox();		
-		
-									//Convert the boolean user choices to integers
-									badReg = 0;
-									if(badRegRaw == true) {
-										badReg = 1;
-									}
-									badDetection = 0;
-									if(badDetectionRaw == true) {
-										badDetection = 1;
-									}
-									
-								//If the CP generation was good
-								} else {
-									
-									//Set the tool to multipoint and ask the user to click on any cells the
-									//automatic placement generation missed
-									setTool("multipoint");
-									selectWindow("MAX");
-									roiManager("Show All");
-									waitForUser("Click on cells that were missed by automatic detection, if any");
-									
-									//If the user clicked on additional cells
-									if(selectionType()!=-1) {
-										
-										//Add the cell locations to the roiManager and measure them to get their X,Y coords
-										//in the results window
-										roiManager("add");
-										run("Set Measurements...", "centroid redirect=None decimal=0");
-										run("Clear Results");
-										roiManager("Select", 1);
-										roiManager("Measure");
-										
-										setBatchMode(true);
-										
-										//Get the X,Y coords from the results window
-										selectWindow("Results");
-										X = Table.getColumn("X");
-										Y = Table.getColumn("Y");
-				
-										//Concatenate the two - the original X and Y coords and the ones we've added
-										newX = Array.concat(xPoints, X);
-										newY = Array.concat(yPoints, Y);
-		
-										//Then set the concatenated arrays as the X and Y results in the results table before
-										//saving it over the CP coordinates file
-										Table.setColumn("X", newX);
-										Table.setColumn("Y", newY);
-										Table.update;
-										saveAs("Results", directories[1]+imageNames[3]+"/Cell Coordinates/CP coordinates for " + imgName + ".csv");
-										selectWindow("CP coordinates for Substack ("+maskGenerationArray[i0]+").csv");
-										run("Close");
-									}
-								
-								}
 				
 								//If the image had bad detection but otherwise the registration was fine
 								if(badDetection == 1 && badReg == 0) {

@@ -515,6 +515,8 @@ for(currImage = 0; currImage < imageName.length; currImage++) {
 				badReg = reasonsArray[0];
 				badDetection = reasonsArray[1];
 
+
+				//This is hte next thing we need to clean up
 				if(badDetection == 1 && badReg == 0) {
 					
 					//Delete the automatically generated masks overlay
@@ -577,37 +579,6 @@ for(currImage = 0; currImage < imageName.length; currImage++) {
 				
 								//If the image had bad detection but otherwise the registration was fine
 								if(badDetection == 1 && badReg == 0) {
-									
-									//Delete the automatically generated masks overlay
-									if(roiManager("count")>0) {
-										roiManager("deselect");
-										roiManager("delete");
-									}
-									selectWindow("MAX");
-									
-									//Ask the user to click on cell bodies
-									setTool("multipoint");
-									setBatchMode("Exit and Display");
-									roiManager("show none");
-									run("Select None");
-									waitForUser("Click on cell bodies to select cells for analysis");
-									setBatchMode(true);
-									
-									//Once the user has selected all the cells, we add them to roiManager before measuring them with roiManager to get their coordinates
-									roiManager("add");
-									run("Set Measurements...", "centroid redirect=None decimal=0");
-									selectWindow("MAX");
-									roiManager("Select", 0);
-									run("Clear Results");
-									roiManager("Measure");
-									roiManager("delete");
-					
-									//Save the coordinates of cell placements
-									selectWindow("Results");
-									saveAs("Results", directories[1]+imageNames[3]+"/Cell Coordinates/CP coordinates for " + imgName + ".csv");
-				
-									//Set bad detection 0
-									badDetection = 0;
 				
 								//If the image had bad registration, we do nothing
 								} else {

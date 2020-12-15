@@ -50,13 +50,14 @@ function getNoSubstacks(imageName, directories, substacksPossible, iniValues, pr
 			
 	//If the image was kept, count how many 10um thick substacks we can make with at least
 	//10um spacing between them, and 10um from the bottom and top of the stack
-	imageNameRaw = File.getNameWithoutExtesion(imageName);
+	imageNameRaw = File.getNameWithoutExtension(imageName);
 	imagePath = directories[1]+imageNameRaw+"/"+imageNameRaw+" processed.tif";
 
 	if(substacksPossible == -1) {
 
 		timepoints = openAndGetImageTimepoints(imagePath, iniValues, 'Morphology');
-		selectWindow(File.getName(filePath));
+		timepoints = 1;
+		selectWindow(File.getName(imagePath));
 		run("Close");
 		
 		//Calculate how much Z depth there is in the stack
@@ -141,12 +142,10 @@ function getMaximaCoordinates(imagePath, currMaskGenerationArray, columnNames) {
 
 }
 
-function saveSubstackStatusTable(substackNames, badReg, badDetection, processed, qcValue, saveLoc) {
+function saveSubstackStatusTable(substackNames, processed, qcValue, saveLoc) {
 	//Save these arrays into a table
 	Table.create("Cell Position Marking.csv");
 	Table.setColumn("Substack", substackNames);
-	Table.setColumn("Bad Registration", badReg);
-	Table.setColumn("Bad Detection", badDetection);
 	Table.setColumn("Processed", processed);
 	Table.setColumn("QC", qcValue);
 	Table.save(saveLoc);
@@ -178,8 +177,10 @@ function fillAndSaveSubstackCoordinatesTable(currentMaskGen, newX, newY, directo
 	}
 
 	//Save this table
-	saveAs("Results", directories[1]+imageNameRaw+"/Cell Coordinates/CP coordinates for Substack (" + currentMaskGen + ").csv");
-	Table.close();
+	saveLoc = directories[1]+imageNameRaw+"/Cell Coordinates/CP coordinates for Substack (" + currentMaskGen + ").csv";
+	saveAs("Results", saveLoc);
+	selectWindow(File.getName(saveLoc));
+	run("Close");
 
 }
 
@@ -201,7 +202,7 @@ function detectSubstackCellsSaveSubstackImages(directories, imageNameRaw, maskGe
 	columnNames = newArray('X', 'Y');
 	unformattedLocations = getMaximaCoordinates(imagePath, maskGenerationValue, columnNames);
 
-	cutIndex = unformattedLocations[0]+1
+	cutIndex = unformattedLocations[0]+1;
 	newX = Array.slice(unformattedLocations, 1, cutIndex);
 	newY = Array.slice(unformattedLocations, cutIndex);
 
@@ -230,7 +231,7 @@ function userApproval(waitForUserDialog, dialogName, checkboxString) {
 	//Scale the image to fit, before exiting and displaying hidden images from 
 	//batch mode, autocontrasting the image, then waiting for the user				
 	run("Scale to Fit");					
-	setBatchMode("Exit and Display");
+	setBatchMode("show");
 	setOption("AutoContrast", true);
 	waitForUser(waitForUserDialog);
 
@@ -303,14 +304,14 @@ function getBadCPReasons() {
 
 }
 
-function userSelectMissedCells(renameTo) {
+function userSelectCells(renameTo, message) {
 					
 	//Set the tool to multipoint and ask the user to click on any cells the
 	//automatic placement generation missed
 	setTool("multipoint");
 	selectWindow(renameTo);
 	roiManager("Show All");
-	waitForUser("Click on cells that were missed by automatic detection, if any");
+	waitForUser(message);
 
 	selectCells = selectionType();
 
@@ -328,8 +329,6 @@ function getSelectionCoordinates() {
 	roiManager("Select", 1);
 	roiManager("Measure");
 	
-	setBatchMode(true);
-	
 	outputArray = combineResultsCols(newArray('X', 'Y'));
 
 	return outputArray;
@@ -341,17 +340,21 @@ function addSelectedCoordinateStoExisting(tableLoc) {
 	outputArray = getSelectionCoordinates();
 	
 	cutIndex = outputArray[0]+1
-	selectedX = Array.slice(outputArray, 1, cutIndex);
-	selectedY = Array.slice(outputArray, cutIndex);
+	newX = Array.slice(outputArray, 1, cutIndex);
+	newY = Array.slice(outputArray, cutIndex);
 
-	existingX = getTableColumn(tableLoc, 'X');
-	existingY = getTableColumn(tableLoc, 'Y');
+	if(File.exists(tableLoc) == 1) {
+		existingX = getTableColumn(tableLoc, 'X');
+		existingY = getTableColumn(tableLoc, 'Y');
 
-	//Concatenate the two - the original X and Y coords and the ones we've added
-	newX = Array.concat(selectedX, existingX);
-	newY = Array.concat(selectedY, existingY);
+		//Concatenate the two - the original X and Y coords and the ones we've added
+		newX = Array.concat(newX, existingX);
+		newY = Array.concat(newY, existingY);
+		Table.read(tableLoc);
+	} else {
+		Table.create(File.getName(tableLoc));
+	}
 
-	Table.read(tableLoc);
 	Table.setColumn("X", newX);
 	Table.setColumn("Y", newY);
 	Table.save(tableLoc);
@@ -361,23 +364,257 @@ function addSelectedCoordinateStoExisting(tableLoc) {
 
 }
 
+function getWorkingAndStorageDirectories(){
+
+    Dialog.create("Pick Directory");
+    Dialog.addMessage("Choose morphology analysis working directory");
+    Dialog.show();
+
+    setOption("JFileChooser", true);
+    workingDirectory = getDirectory("Choose morphology analysis working directory");
+
+    Dialog.create("Pick Directory");
+    Dialog.addMessage("Choose the image storage directory");
+    Dialog.show();
+    //Get the parent 2P directory i.e. where all the raw 2P images are stored
+    imageStorage = getDirectory("Choose the image storage directory");
+    setOption("JFileChooser", false);
+
+    //Here we create an array to store the full name of the directories we'll be 
+    //working with within our morphology processing directory
+    directories=newArray(workingDirectory+"Input" + File.separator, 
+						workingDirectory+"Output" + File.separator, 
+						workingDirectory+"Done" + File.separator,
+						imageStorage);
+    //[0] is input, [1] is output, [2] is done, [3] is image storage
+
+    directoriesNames = newArray('Input', 'Output', 'Done', 'Image Storage');
+    for (i = 0; i < directories.length; i++) {
+		print('Directories', directoriesNames[i], ':',  directories[i]);
+    }
+
+    images_in_storage = listFilesAndFilesSubDirectories(directories[3], '.tif');
+    if(images_in_storage.length == 0) {
+    	exit('No .tif images in image storage, exiting plugin');
+    }
+
+    return directories;
+}
+
+//Function finds all files that contain "substring" in the path "directoryname" 
+//"fileLocations" is an array that is passed in to fill with paths that contain substring
+function listFilesAndFilesSubDirectories(directoryName, subString) {
+
+	//Get the list of files in the directory
+	listOfFiles = getFileList(directoryName);
+
+	//an array to add onto our fileLocations array to extend it so we can keep adding to it
+	arrayToConcat = newArray(1);
+    fileLocations = newArray(1);
+
+	//Loop through the files in the file list
+	for (i=0; i<listOfFiles.length; i++) {
+
+		//Create a string of the full path name
+		fullPath = directoryName+listOfFiles[i];
+		
+		//If the file we're checking is a file and not a directory and if it  contains the substring we're 
+		//interested in within its full path we check  against the absolute path of our file in lower case on both counts
+		if (File.isDirectory(fullPath)==0 && indexOf(toLowerCase(fullPath), toLowerCase(subString))>-1) {
+			
+			//We store the full path in the output fileLocations at the latest index 
+			//(end of the array) and add an extra bit onto the Array so we can keep filling it
+			fileLocations = Array.concat(fileLocations, arrayToConcat);
+			currentIndex=fileLocations.length-1;
+			fileLocations[currentIndex] = fullPath;
+
+		//If the file we're checking is a directory, then we run the whole thing on that directory
+		} else if (File.isDirectory(fullPath)==1) {
+
+			//Create a new array to fill whilst we run on this directory and at the end add it onyo the fileLocations array 
+			tempArray = listFilesAndFilesSubDirectories(fullPath, subString);
+			fileLocations = Array.concat(fileLocations, tempArray);     
+			
+		}
+	}
+
+	//Create a new array that we fill with all non zero values of fileLocations
+	output = Array.deleteValue(fileLocations, 0);
+
+	//Then return the output array
+	return output;
+	
+}
+
+function getTableColumn(fileLoc, colName) {
+
+	open(fileLoc);
+	tableName = Table.title;
+	selectWindow(tableName);
+
+	outputArray = Table.getColumn(colName);
+
+	selectWindow(tableName);
+	run("Close");
+
+	return outputArray;
+
+}
+
+function parseIniValues(iniStrings, iniToOpen) {
+		
+	//We open the ini file as a string
+	iniText = File.openAsString(iniToOpen);	
+	
+	iniValues = newArray(iniStrings.length);
+
+	//Looping through the values we want to grab
+	for(i=0; i<iniStrings.length; i++) {
+
+		//We create a start point that is the index of our iniStrings + the length of the string
+		startPoint = indexOf(iniText, iniStrings[i])+lengthOf(iniStrings[i]);
+
+		//Get a substring that starts at our startPoint i.e. where the numbers of our current string start
+		checkString = substring(iniText, startPoint);
+
+		//For each character, if it isn't numeric add 1 to the hitCount and if we hit
+		//two consecutive non-numerics, go back to pull out the values and store them
+		hitCount = 0;
+		for(j=0; j<lengthOf(checkString); j++) {
+			if(charCodeAt(checkString, j) < 48 || charCodeAt(checkString, j) > 57) {
+				hitCount = hitCount + 1;
+				if(hitCount == 2) {
+					realString = substring(checkString, 0, j);
+					break;
+				}
+			}
+		}
+
+		//Parse our values
+		iniValues[i] = parseFloat(realString);
+	}
+
+	return iniValues;
+
+}
+
+
+//This is a function to retrieve the data from the ini file. The ini file contains calibration information for the 
+//entire experiment that we use to calibrate our images. iniFolder is the folder within which the ini file is located, 
+//and iniValues is an array we pass into the function that we fill with calibration values before returning it	
+function getIniData(iniFolder, iniStrings) {
+
+	//Find our ini file
+	iniLocations = findFileWithFormat(iniFolder, "ini");
+	if(iniLocations.length > 1) {
+		exit("More than 1 ini file found, exiting plugin");
+	} else {
+		print(".ini file found at", iniLocations[0]);
+		iniToOpen = iniLocations[0];
+	}
+
+	iniValues = parseIniValues(iniStrings, iniToOpen);
+		
+	return iniValues;
+}
+
+function findFileWithFormat(folder, fileFormat) {
+
+	//We get the list of files in the folder
+	fileList = getFileList(folder);
+	
+	//Create an array to store our locations and a counter for how many files we've found
+	storeIt = newArray(1);
+	storeIt[0] = 'none';
+	count = 0;
+	for(i=0; i<fileList.length; i++) {
+		if(endsWith(toLowerCase(fileList[i]), fileFormat)) {
+			//Create a variable that tells us which file has the format we're looking for
+			fileLocation = folder + fileList[i]; 
+			
+			//If we're onto our second location, create a new array to tack onto storeIt that we then
+			//fill with the new location
+			if(count >0) {
+				appendArray = newArray(1);
+				storeIt = Array.concat(storeIt, appendArray);
+			}
+			
+			//Store the location and increase the count
+			storeIt[count] = fileLocation;
+			count += 1;
+		}
+	}
+
+	if(storeIt[0] == 'none') {
+		exit("No file found");
+	} else {
+		return storeIt;
+	}
+
+}
+
+function openAndGetImageTimepoints(imagePath, calibrationValues, appendWith) {
+
+    open(imagePath);
+            
+    //Get out the animal name info - animal and 
+    //timepoint that we store at index [0] in the array, the timepoint only at [1]
+    //the animal only at [2] and finally the file name without the .tif on the end
+    //that we store at [3]
+    imageNames = getAnimalTimepointInfo(imagePath, appendWith);
+    print(imageNames[3] + " opened");
+
+	//Calculate the number of timepoints in the image by multiplying frames per plane * number of plans, and divide
+	//that by the number of slices in the image
+	selectWindow(File.getName(imagePath));
+    timepoints = (calibrationValues[3] * calibrationValues[4])/nSlices;
+
+    return timepoints;
+
+}
+
+//"OutputArray" is an array in which we store the output of this function
+//InputName is a string file path of an image generated by this macro
+//Function cuts up the file path of the inputName into different segments that
+//contain different bits of info i.e. info about the animal and 
+//timepoint that we store at index [0] in the array, the timepoint only at [1]
+//the animal only at [2] and finally the file name without the .tif on the end that we store at [3]
+function getAnimalTimepointInfo(inputName, appendWith) {
+  
+	outputArray = newArray(4);
+  
+	//For some reason we need to convert these strings to strings else the function doesn't work
+	outputArray[0] = File.getName(substring(inputName, 0, indexOf(inputName, appendWith)));
+	outputArray[1] = toLowerCase(substring(outputArray[0], indexOf(outputArray[0], " ")+1));
+	outputArray[2] = toLowerCase(substring(outputArray[0], 0, indexOf(outputArray[0], " ")));
+	outputArray[3] = File.getNameWithoutExtension(inputName);
+  
+	return outputArray;
+  
+  }
+
+setBatchMode(true);
+
 //These folder names are where we store various outputs from the processing 
 //(that we don't need for preprocessing)
 storageFolders=newArray("Cell Coordinates/", "Cell Coordinate Masks/",
     "Somas/", "Candidate Cell Masks/", "Local Regions/", "Results/");
 
-//Set the size of the square to be drawn around each cell in um
-LRSize = 120;
-
 //Get user input into where our working directory, and image storage directories, reside
 directories = getWorkingAndStorageDirectories();
 //[0] is input, [1] is output, [2] is done (working directories) [3] is directoryName (storage directory)
 
-//Populate our image info arrays
-tableLoc = directories[1] + "Images to Use.csv";
+//Ask the user what size buffer in um to use to seperate substacks; defaults to 10					
+Dialog.create('Buffer Size');
+Dialog.addNumber('What size buffer in um to use to seperate substacks?', 10);
+Dialog.show();
+zBuffer = Dialog.getNumber();
 
-if(File.exists(tableLoc) != 1) {
-	exit("Need to run the stack preprocessing step first");
+//Populate our image info arrays
+imagesToUseFile = directories[1] + "Images to Use.csv";
+
+if(File.exists(imagesToUseFile) != 1) {
+	exit("Need to run the stack preprocessing and stack QA steps first");
 }
 
 //If we already have a table get out our existing status indicators
@@ -410,6 +647,30 @@ if(File.exists(maskGenerationStatusLoc) == 1) {
 
 }
 
+function makeCellDetectionFolders(storageFolders, directories, imageNameRaw) {
+	toMake = newArray(storageFolders.length);
+	for(currFolder = 0; currFolder < storageFolders.length; currFolder++) {
+		toMake[currFolder] = directories[1] + imageNameRaw + "/" + storageFolders[currFolder];
+	}
+	makeDirectories(toMake);
+}
+
+//This function clears the results table if it exists, clears the roimanager, and closes 
+//all open images - useful for quickly clearing the workspace
+function Housekeeping() {
+	
+	if (isOpen("Results")) {
+		run("Clear Results");
+	}
+	if(roiManager("count")>0) {
+		roiManager("deselect");
+		roiManager("delete");
+	}
+	if(nImages>0) {
+		run("Close All");
+	}
+}
+
 //Retrieve the number of substacks to be made for each image, as well as the number we've already made - if the file doesn't
 //exist, set these defaults to -1 (not calculated) and 0
 substacksPossible = getOrCreateTableColumn(maskGenerationStatusLoc, "Number of Substacks to Make", -1, imageName.length);
@@ -423,8 +684,14 @@ for(currImage = 0; currImage < imageName.length; currImage++) {
 
 	if(proceedCellDetection == true) {
 
+		print('Automatically detecting cell locations for:');
+		print(imageName[currImage]);
+
 		//Calculate the number of substacks we can make for this image
-		subStacksPossible[currImage] = getNoSubstacks(imageName[currImage], directories, substacksPossible[currImage], iniValues, 'Morphology', zBuffer);
+		substacksPossible[currImage] = getNoSubstacks(imageName[currImage], directories, substacksPossible[currImage], iniValues, 'Morphology', zBuffer);
+
+		print('Number of substacks we can extract from stack:');
+		print(substacksPossible[currImage]);
 
 		//Create an array storing the beginning and ending slices for each substack we're making
 		maskGenerationArray = getSlicesForEachSubstack(substacksPossible[currImage], zBuffer);
@@ -432,14 +699,12 @@ for(currImage = 0; currImage < imageName.length; currImage++) {
 		//Here we make any storage folders that aren't related to TCS and 
 		//haven't already been made
 		imageNameRaw = File.getNameWithoutExtension(imageName[currImage]);
-		makeCellDetectionFolders(storageFolders, directories, imageNameRaw));
+		makeCellDetectionFolders(storageFolders, directories, imageNameRaw);
 
 		//For our cell position marking table, get out our columns for this image - unless they don't exist in which case make
 		//them with defaults of -1
 		cellPositionMarkingLoc = directories[1] + imageNameRaw + "/Cell Coordinate Masks/Cell Position Marking.csv";
 
-		badReg = getOrCreateTableColumn(cellPositionMarkingLoc, "Bad Registration", -1, substacksPossible[currImage]);
-		badDetection = getOrCreateTableColumn(cellPositionMarkingLoc, "Bad Detection", -1, substacksPossible[currImage]);
 		processed = getOrCreateTableColumn(cellPositionMarkingLoc, "Processed", -1, substacksPossible[currImage]);
 		qcValue = getOrCreateTableColumn(cellPositionMarkingLoc, "QC", -1, substacksPossible[currImage]);
 
@@ -456,6 +721,9 @@ for(currImage = 0; currImage < imageName.length; currImage++) {
 			//If that substack hasn't been processed / made
 			if(processed[currSubstack] == -1) {
 
+				print('Detecting and saving cells for substack:');
+				print(maskGenerationArray[currSubstack]);
+
 				detectSubstackCellsSaveSubstackImages(directories, imageNameRaw, maskGenerationArray[currSubstack]);
 
 				//Set our processed value for this substack to 1, and our substacksMade value for this image to whatever it was + 1
@@ -463,13 +731,18 @@ for(currImage = 0; currImage < imageName.length; currImage++) {
 				substacksMade[currImage] = substacksMade[currImage] + 1;
 
 				//Save our substack and image specific tables
-				saveSubstackStatusTable(substackNames, badReg, badDetection, processed, qcValue, cellPositionMarkingLoc);
+				saveSubstackStatusTable(substackNames, processed, qcValue, cellPositionMarkingLoc);
 				saveMaskGenerationStatusTable(imageNameMasks, substacksPossible, substacksMade, maskGenerationStatusLoc);
 
 			}
 		}
+
+		print('Processing of substacks for', imageName[currImage], ' complete');
 	}
+
 }
+
+print('Automated cell detection complete');
 
 //Retrieve the number of substacks to be made for each image, as well as the number we've already made - if the file doesn't
 //exist, set these defaults to -1 (not calculated) and 0
@@ -487,8 +760,6 @@ for(currImage = 0; currImage < imageName.length; currImage++) {
 	//them with defaults of -1
 	cellPositionMarkingLoc = directories[1] + imageNameRaw + "/Cell Coordinate Masks/Cell Position Marking.csv";
 
-	badReg = getOrCreateTableColumn(cellPositionMarkingLoc, "Bad Registration", -1, substacksPossible[currImage]);
-	badDetection = getOrCreateTableColumn(cellPositionMarkingLoc, "Bad Detection", -1, substacksPossible[currImage]);
 	processed = getOrCreateTableColumn(cellPositionMarkingLoc, "Processed", -1, substacksPossible[currImage]);
 	qcValue = getOrCreateTableColumn(cellPositionMarkingLoc, "QC", -1, substacksPossible[currImage]);
 
@@ -499,71 +770,120 @@ for(currImage = 0; currImage < imageName.length; currImage++) {
 		substackNames = getTableColumn(cellPositionMarkingLoc, Substack);
 	}
 
+	//For each substack for this image
 	for(currSubstack = 0; currSubstack < substackNames.length; currSubstack++) {
 
+		//If we've made this substack already but haven't quality controlled the cell selection
 		if(processed[currSubstack] == 1 & qcValue == -1) {
+
+			print('Quality controlling cell detection for:');
+			print(imageName[currImage], ' substack ', substackNames[currSubstack]);
 
 			imageLoc = directories[1]+imageNameRaw"/Cell Coordinate Masks/CP mask for Substack ("+substackNames[currSubstack]+").tif";
 			tableLoc = directories[1]+imageNameRaw+"/Cell Coordinates/CP coordinates for Substack ("+substackNames[currSubstack]+").csv";
 			renameTo = 'coordImage'
 
+			//Open the image and display the detected cell coordinates on it
 			goodCPs = openDisplayAndApproveCoordinates(imageLoc, tableLoc, renameTo);
 
+			//If the user isn't happy with the detection
 			if(goodCPs = false) {
 
+				print('User unhappy with automated cell detection');
+
+				//Ask why - detection or registration>
 				reasonsArray = getBadCPReasons();
 				badReg = reasonsArray[0];
 				badDetection = reasonsArray[1];
 
-
-				//This is hte next thing we need to clean up
+				//If it's just detection
 				if(badDetection == 1 && badReg == 0) {
+
+					print('Automated cell detection was poor; prompting user to select cells manually');
 					
 					//Delete the automatically generated masks overlay
 					if(roiManager("count")>0) {
 						roiManager("deselect");
 						roiManager("delete");
 					}
-					selectWindow("MAX");
-					
-					//Ask the user to click on cell bodies
-					setTool("multipoint");
-					setBatchMode("Exit and Display");
-					roiManager("show none");
-					run("Select None");
-					waitForUser("Click on cell bodies to select cells for analysis");
-					setBatchMode(true);
-					
-					//Once the user has selected all the cells, we add them to roiManager before measuring them with roiManager to get their coordinates
-					roiManager("add");
-					run("Set Measurements...", "centroid redirect=None decimal=0");
-					selectWindow("MAX");
-					roiManager("Select", 0);
-					run("Clear Results");
-					roiManager("Measure");
-					roiManager("delete");
 
-					//Save the coordinates of cell placements
-					selectWindow("Results");
-					saveAs("Results", directories[1]+imageNames[3]+"/Cell Coordinates/CP coordinates for " + imgName + ".csv");
+					deleted = File.delete(tableLoc);
+					if(deleted != 1) {
+						exit("Issue with deleting coordinates file");
+					}
 
-					//Set bad detection 0
-					badDetection = 0;
+					//Ask the user to select cells on the image
+					selectedCells = userSelectCells(renameTo, "Click on cells to select for analysis");
+					
+					//If they\ve selected cells, save them to our substack table and set QC to 1
+					if(selectedCells != -1) {
+						print('User-selected cells being saved to coordinates file');
+						addSelectedCoordinateStoExisting(tableLoc);
+						qcValue[currSubstack] = 1;
+
+					//If the user didn't select any cells, set QC to 0 (for failing QC)
+					} else {
+						qcValue[currSubstack] = 0;
+						print("No cells selected for this substack");
+						print('This substack will be ignored for future steps');
+						
+						//If we haven't manually QA'd this image yet we send it back for manual frame selection
+						//if(manualPassedQA[currImage] == -1) {
+
+							//autoPassedQA[indexOfImage] = 0;
+							//print('Image failed automated QA; flagging for manual processing');
+
+							//doneFileLoc = directories[2] + imageName[currImage];
+
+							//We move this image back to the input folder from the done folder so we can manually process it
+							//wasMoved = File.rename(doneFileLoc, directories[0] + imageName[currImage]);
+							//if(wasMoved == 0) {
+							//	exit("Issue with moving image to input folder");
+								//Could be because its already in input?
+							//} else {
+							//	print("Image moved from Done to Input");
+							//}
+
+						//}
+
+					}
 
 				}
 
+				//If the user selected that the image was badly registered
+				if(badReg == 1) {
+
+					print('User indicated stack was poorly registered; ignoring for future analysis steps');
+
+					//Set QC to 0 for a fail
+					qcValue[currSubstack] = 0;
+					//Do something here? Move it back to input and flag for manual?
+				}
+
+			//If the user is happy with the automated cell selection
 			} else {
 
-				selectedCells = userSelectMissedCells(renameTo);
+				print('User happy with automated cell detection');
+				print('Prompting user to select any additional cells that were missed by automated selection');
+
+				//Set qc to 1 to show we passed
+				qcValue[currSubstack] = 1;
+
+				//Ask the user to select any additional cells they missed
+				selectedCells = userSelectCells(renameTo, "Click on cells that were missed by automatic detection, if any");
 				
 				//If the user clicked on additional cells
 				if(selectedCells !=-1) {
 
+					print('Adding user selected cells to coordinate file');
+					//Since the talbe at tableLoc already exists, we update it
 					addSelectedCoordinateStoExisting(tableLoc);
 
 				}
 
 			}
+
+			saveSubstackStatusTable(substackNames, processed, qcValue, cellPositionMarkingLoc);
 
 			Houekeeping();
 
@@ -572,42 +892,8 @@ for(currImage = 0; currImage < imageName.length; currImage++) {
 
 	}
 
+	print('Quality control of cell detection for ', imageName[currImage], ' complete');
 
-			
-							//If the current substack hasn't been quality controleld
-							if(currentQC==0) {
-				
-								//If the image had bad detection but otherwise the registration was fine
-								if(badDetection == 1 && badReg == 0) {
-				
-								//If the image had bad registration, we do nothing
-								} else {
-									setBatchMode(true);
-								}
-	
-								//Future - write code so that if the image had bad registration we can rbound to manually register it
-								//Or just get out a list of bad reg so its not automated?
-								
-								//Set currentQC to 1 since we've finished quality control
-								currentQC = 1;
-				
-								//Update our cell position marking table and save it
-								selectWindow("Cell Position Marking");
-								Table.set("Bad Detection", i0, badDetection);
-								Table.set("Bad Registration", i0, badReg);
-								Table.set("QC", i0, currentQC);
-								Table.update;
-								Table.save(directories[1] + imageNames[3] + "/Cell Coordinate Masks/Cell Position Marking.csv"); 
-				
-								Housekeeping();
-							
-							}
-						}
-			
-					Table.reset("Cell Position Marking");
-		
-					}
-				}
-			}
-		}
-	}
+}
+
+print('QC of cell detection complete');

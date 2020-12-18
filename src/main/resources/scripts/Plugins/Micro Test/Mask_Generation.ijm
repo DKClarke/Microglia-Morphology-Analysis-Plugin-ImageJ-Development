@@ -76,45 +76,10 @@ for (i=0; i<imageName.length; i++) {
 				tcsAnalysed = getOrCreateTableColumn(tcsStatusTable, "Analysed", -1, numberOfLoops);
 
 				if(tcsValue[0] == -1) {
-
-				}
-
-			//Here we begin looping through the different TCS values we're going to be analysing
-			for(TCSLoops=0; TCSLoops<numberOfLoops; TCSLoops++) {
-	
-				//This is an array to store the associated values for the current TCS loop
-				currentLoopValues = newArray(TCSColumns.length);
-				//[0] is TCS, [1] is masks generated, [2] is QC checked, [3] is analysed, [4] is wrong obj
-
-				//Set the TCS as the lowest TCS + the increment we want to increase by, X how many times we've increased
-				//We set these variables so that TCS is the current TCS to use, and TCSLoops is the number of loops we've been through
-				currentLoopValues[0]=selection[0]+(selection[3]*TCSLoops);
-
-				//Here we fill our TCSValues array with all the associated data taken from previous instances
-				//we've run this macro if we have generated a TCS Status.csv file before
-
-				fillArray(TCSValues, TCSResultsRefs, TCSColumns, TCSResultsAreStrings, true); 
-	
-				//Here we fill our TCS Status table with data from our TCSValues array
-				selectWindow("ToBChanged");
-				for(i0=0; i0<numberOfLoops; i0++) {
-					for(i1=0; i1<TCSColumns.length; i1++) {
-						Table.set(TCSColumns[i1], i0, TCSValues[(numberOfLoops*i1)+i0]);
+					for(TCSLoops=0; TCSLoops<numberOfLoops; TCSLoops++) {
+						tcsValue[TCSLoops] = selection[0]+(selection[3]*TCSLoops);
 					}
 				}
-	
-				selectWindow("ToBChanged");
-				for(i0 = 0; i0<Table.size; i0++) {
-					if(currentLoopValues[0] == Table.get("TCS", i0)) {
-						//Here we fill our currentLoopValues table with the TCSValues data that corresponds to the TCS value
-						//we're current processing - this will be a bunch of zeros if we haven't processed anything before
-						for(i1=0; i1<TCSColumns.length; i1++) {
-							currentLoopValues[i1] = Table.get(TCSColumns[i1], i0);
-						}
-					}
-				}
-
-				Table.rename("ToBChanged", "TCS Status");
 
 				//limits is an array to store the lower and upper limits of the cell area we're using within this TCS loop, calculated
 				//according to the error the user input

@@ -811,25 +811,6 @@ for(currImage = 0; currImage < imageName.length; currImage++) {
 						qcValue[currSubstack] = 0;
 						print("No cells selected for this substack");
 						print('This substack will be ignored for future steps');
-						
-						//If we haven't manually QA'd this image yet we send it back for manual frame selection
-						//if(manualPassedQA[currImage] == -1) {
-
-							//autoPassedQA[indexOfImage] = 0;
-							//print('Image failed automated QA; flagging for manual processing');
-
-							//doneFileLoc = directories[2] + imageName[currImage];
-
-							//We move this image back to the input folder from the done folder so we can manually process it
-							//wasMoved = File.rename(doneFileLoc, directories[0] + imageName[currImage]);
-							//if(wasMoved == 0) {
-							//	exit("Issue with moving image to input folder");
-								//Could be because its already in input?
-							//} else {
-							//	print("Image moved from Done to Input");
-							//}
-
-						//}
 
 					}
 

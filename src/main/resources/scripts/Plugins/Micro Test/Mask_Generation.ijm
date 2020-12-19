@@ -65,6 +65,154 @@ function coordinateWithinBuffer(avgProjImageLoc, currXCoord, currYCoord, bufferI
 
 }
 
+function getLRCoords(cellLocCoords, LRLengthPixels) {
+
+
+	//Here we store x and y values that we would use to draw a 120x120um square aruond our coordinate - we store the coordinates
+	//that would be the top left corner of this square as that is what we need to input to draw it
+	LRCoords = newArray(cellLocCoords[0]-(LRLengthPixels/2), cellLocCoords[1]-(LRLengthPixels/2));
+	//[0] is xcordn, [1] is ycordn
+
+	//Idea here is that if our x or y coordinates are less than half a LR length away from the edge, the LR length we create is half the 
+	//usual length + however far our coordinate is from the edge
+	//We also set our rectangle making coordinates to 0 if they would be less than 0 (i.e. our coordinates are less than half the LR distance
+	//from the pictre edges
+
+	//For each of our cell coordinates
+	for(currCoord = 0; currCoord < cellLocCoords.length; currCoord++) {
+
+		//If that coordinate is too close to the bottom left of the image for us to create a
+		//local region with the existing LR coordinates
+		if(cellLocCoords[currCoord] < LRLengthPixels/2) {
+
+			//Set our LR coord to 0 (else it would be -ve)
+			LRCoords[currCoord] = 0;
+
+		}
+	}
+
+	return LRCoords;
+
+
+}
+
+
+function getLRLengths(cellLocCoords, dimensionsArray, LRLengthPixels) {
+
+	//This array is created to store the length in x and y of the local region we're going to draw - in theory it should be 120um
+	//for both directions but if our coordinate is close enough to the edge of our image that this isn't true, we adjust it
+	LRLengthArray = newArray(LRLengthPixels, LRLengthPixels);
+	//[0] is xLength, [1] is yLength
+
+	//For each of our cell coordinates
+	for(currCoord = 0; currCoord < cellLocCoords.length; currCoord++) {
+
+		//If that coordinate is too close to the bottom left of the image for us to create a
+		//local region with the existing LR coordinates
+		if(cellLocCoords[currCoord] < LRLengthPixels/2) {
+
+			//Set the length to be shorter than the full length depending on
+			//where our coordinate is
+			LRLengthArray[currCoord]=(LRLengthPixels/2) + cellLocCoords[currCoord];
+
+		//Otherwise if the coordinate is too close to the top right of the image
+		} else if(cellLocCoords[currCoord] > (dimensionsArray[currCoord] - (LRLengthPixels/2))) {
+
+			//Adjust the size of the local region we create accordingly
+			LRLengthArray[currCoord]=(LRLengthPixels/2) + dimensionsArray[currCoord] - cellLocCoords[currCoord];
+
+		}
+	}
+
+	return LRLengthArray;
+
+}
+
+function createLRImage(avgProjImageLoc, LRCoords, LRLengthArray) {
+
+	imageTitle = File.getName(avgProjImageLoc);
+	selectWindow(imageTitle);
+
+	//Here we make our local region based on all the values we've calculated
+	makeRectangle(LRCoords[0], LRCoords[1], LRLengthArray[0], LRLengthArray[1]);
+	run("Duplicate...", " ");
+	tifLess = File.getNameWithoutExtension(avgProjImageLoc);
+	selectWindow(tifLess + "-1.tif");
+	rename("LR");
+	run("Select None");
+
+
+}
+
+function getOtsuValue(xCoord, yCoord) {
+
+	//We then auto threshold the LR and then get the lower and upper threshold levels from the otsu method and call the lower threshold
+	//otsu
+	setAutoThreshold("Otsu dark");
+	getThreshold(otsu, upper);
+	print("Finding connected pixels from CP using threshold");
+
+	//We get the grey value at that point selection, and then if the lower threshold of the image
+	//is bigger than that value, we set it to that value
+	pointValue = (getPixel(xCoord, yCoord)) - 1;
+	if(otsu>=pointValue) {
+		otsu = pointValue-1;
+	}
+
+	return otsu;
+
+}
+
+function getConnectedMask(xCoord, yCoord, thresholdVal) {
+
+	//We then make the point on our image and find all connected pixels to that point that have grey values greater than the otsu value
+	selectWindow("LR");
+	makePoint(xCoord, yCoord);
+	setBackgroundColor(0,0,0);
+	run("Find Connected Regions", "allow_diagonal display_image_for_each start_from_point regions_for_values_over="+thresholdVal+" minimum_number_of_points=1 stop_after=1");
+	imgNamemask=getTitle();
+	rename("Connected");
+	print("Connected pixels found");
+
+}
+
+function findMaximaInCoords() {
+
+	selectWindow("Connected");
+	run("Create Selection");
+	getSelectionCoordinates(xpoints, ypoints)
+
+	//We clear outside of our selection in our LR, then find the maxima in that and get the coordinates of the maxima
+	//to store these coordinates as the optimal point selection location
+
+	//We need to find the optimal location as we want our point selection to be on the brightest pixel on our target cell
+	//to ensure that our point selection isn't on a local minima, which whould make finding connected pixels that are 
+	//actually from our target cell very error-prone
+	
+	print("Fine-tuning CP point selection based on mask");
+	selectWindow("LR");
+	run("Duplicate...", " ");
+	selectWindow("LR-1");
+	makeSelection("freehand", xpoints, ypoints);
+	run("Clear Outside");
+	List.setMeasurements;
+
+	//Here we get the max value in the image and get out the point selection associated with the maxima using the
+	//"find maxima" function			
+	topValue = List.getValue("Max");
+	run("Select None");
+	run("Find Maxima...", "noise=1000 output=[Point Selection]");
+	getSelectionCoordinates(tempX, tempY);
+	adjustedCellCoords = newArray(tempX, tempY);
+	selectWindow("LR-1");
+	run("Close");
+	selectWindow("Connected");
+	run("Close");
+
+	return adjustedCellCoords;
+
+}
+
 selection = getMaskGenerationInputs();
 //"What mask size would you like to use as a lower limit?",
 //"What mask size would you like to use as an upper limit?",
@@ -192,132 +340,36 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 								//If the y coordinate isn't less than 5 microns from the bottom or top edges of the image, and the x coordinate isn't less than 5 pixels from the width, then we
 								//proceed
 								if(proceed == true){
-
-									//We're up to here in terms of standardising this approach
-
-									//Here we store x and y values that we would use to draw a 120x120um square aruond our coordinate - we store the coordinates
-									//that would be the top left corner of this square as that is what we need to input to draw it
-									newCoordsArray = newArray(coordsArray[0]-(LRLengthPixels/2), coordsArray[1]-(LRLengthPixels/2));
-									//[0] is xcordn, [1] is ycordn
-		
-									//This array is created to store the length in x and y of the local region we're going to draw - in theory it should be 120um
-									//for both directions but if our coordinate is close enough to the edge of our image that this isn't true, we adjust it
-									LRLengthArray = newArray(2);
-									//[0] is xLength, [1] is yLength
 		
 									//This array stores the width and height of our image so we can check against these
+									selectWindow(File.getName(avgProjImageLoc));
+									getDimensions(originalWidth, originalHeight, originalChannels, originalSlices, originalFrames);
 									dimensionsCheckingArray = newArray(originalWidth, originalHeight);
-			
-									//Idea here is that if our x or y coordinates are less than half a LR length away from the edge, the LR length we create is half the 
-									//usual length + however far our coordinate is from the edge
-									//We also set our rectangle making coordinates to 0 if they would be less than 0 (i.e. our coordinates are less than half the LR distance
-									//from the pictre edges
-			
-									//For each iteration we first do x then y coordinates
-									for(i1=0; i1<2; i1++) {
-										if(coordsArray[i1]<(LRLengthPixels/2)) {
-											newCoordsArray[i1]=0;
-											LRLengthArray[i1]=(LRLengthPixels/2) + coordsArray[i1];
-										
-										//Here we calculate what the length of our selection will have to be to take into account the coordinates location in the image
-										} else if (coordsArray[i1]>(dimensionsCheckingArray[i1]-(LRLengthPixels/2))) {
-											LRLengthArray[i1] = (LRLengthPixels/2)+(dimensionsCheckingArray[i1]-coordsArray[i1]);
-										} else {
-											LRLengthArray[i1] = LRLengthPixels;
-										}
-									}
-			
+
+									LRCoords = getLRCoords(newArray(xCoords[currCell], yCoords[currCell]), LRLengthPixels);
+									//Here we store x and y values that we would use to draw a 120x120um square aruond our coordinate - we store the coordinates
+									//that would be the top left corner of this square as that is what we need to input to draw it
+
+									LRLengthArray = getLRLengths(newArray(xCoords[currCell], yCoords[currCell]), dimensionsCheckingArray, LRLengthPixels);
+									//This array is created to store the length in x and y of the local region we're going to draw - in theory it should be 120um
+									//for both directions but if our coordinate is close enough to the edge of our image that this isn't true, we adjust it
+
 									//Making and saving local regions, running first Otsu method and getting initial value on which to base iterative process	
-									print("Coordinate number " + (i0+1) + "/" + totalCells);
-									print("Making local region image of 120um x 120um centered on X: " + coordsArray[0] + " Y: " + coordsArray[1]);
-									selectWindow(imgName);
+									print("Coordinate number " + (currCell+1) + "/" + xCoords.length);
+									print("Making local region image of 120um x 120um centered on X: " + xCoords[currCell] + " Y: " + yCoords[currCell]);
 
-									imageT = getList("image.titles");
-									otherT =  getList("window.titles");
-									Array.show(imageT, otherT);
-									found = false;
-									for(currName = 0; currName < otherT.length; currName++) {
-										if(otherT[currName] == "Mask Generation PreChange") {
-											found = true;
-											currName = 1e99;
-										}
-									}
-									if(found==false) {
-										setBatchMode("Exit and Display");
-										waitForUser("Not present at very start");
-										setBatchMode(true);
-									}
-		
-									//Here we make our local region based on all the values we've calculated
-									makeRectangle(newCoordsArray[0], newCoordsArray[1], LRLengthArray[0], LRLengthArray[1]);
-									run("Duplicate...", " ");
-									tifLess = substring(imgName, 0, indexOf(imgName, ".tif"));
-									selectWindow(tifLess + "-1.tif");
-									rename("LR");
-		
-									//We then auto threshold the LR and then get the lower and upper threshold levels from the otsu method and call the lower threshold
-									//otsu
-									setAutoThreshold("Otsu dark");
-									getThreshold(otsu, upper);
-									print("Finding connected pixels from CP using threshold");
-			
-									getDimensions(LRwidth, LRheight, LRchannels, LRslices, LRframes); //These are the dimensions of our LR image
-									run("Select None");
-		
-									//Here we create an array that stores the coordinates of a point selection right in the middle of our LR - this is assuming of course
-									//that our selection was somewhere near the cell to begin with
-									LRCoords = newArray(round((LRLengthPixels/2)+(LRwidth-LRLengthPixels)), round((LRLengthPixels/2)+(LRheight-LRLengthPixels)));
-									//[0] is newXCoord, [1] is newYCoord
-			
-									//We get the grey value at that point selection, and then if the lower threshold of the image
-									//is bigger than that value, we set it to that value
-									pointValue = (getPixel(LRCoords[0], LRCoords[1])) - 1;
-									if(otsu>=pointValue) {
-										otsu = pointValue-1;
-									}
+									createLRImage(avgProjImageLoc, LRCoords, LRLengthArray);
 
-									//print(pointValue);
-									//print(otsu);
-									//We then make the point on our image and find all connected pixels to that point that have grey values greater than the otsu value
-									selectWindow("LR");
-									makePoint(LRCoords[0], LRCoords[1]);
-									setBackgroundColor(0,0,0);
-									run("Find Connected Regions", "allow_diagonal display_image_for_each start_from_point regions_for_values_over="+otsu+" minimum_number_of_points=1 stop_after=1");
-									imgNamemask=getTitle();
-									rename("Connected");
-									selectWindow("Connected");
-									run("Invert");
-									run("Create Selection");
-									roiManager("add");
-									print("Connected pixels found");
-			
-									//We clear outside of our selection in our LR, then find the maxima in that and get the coordinates of the maxima
-									//to store these coordinates as the optimal point selection location
-			
-									//We need to find the optimal location as we want our point selection to be on the brightest pixel on our target cell
-									//to ensure that our point selection isn't on a local minima, which whould make finding connected pixels that are 
-									//actually from our target cell very error-prone
-									
-									print("Fine-tuning CP point selection based on mask");
-									selectWindow("LR");
-									run("Duplicate...", " ");
-									selectWindow("LR-1");
-									roiManager("Select", 0);
-									run("Clear Outside");
-									List.setMeasurements;
-					
-									//Here we get the max value in the image and get out the point selection associated with the maxima using the
-									//"find maxima" function			
-									topValue = List.getValue("Max");
-									run("Select None");
-									run("Find Maxima...", "noise=1000 output=[Point Selection]");
-									getSelectionCoordinates(tempX, tempY);
-									currentMaskValues[3] = tempX[0];
-									currentMaskValues[4] = tempY[0];
-									selectWindow("LR-1");
-									run("Close");
-									selectWindow("Connected");
-									run("Close");
+									otsu = getOtsuValue(xCoords[currCell], yCoords[currCell]);
+
+									getConnectedMask(xCoords[currCell], yCoords[currCell], otsu);
+
+									maximaCoordinates = findMaximaInCoords();
+
+									xCoords[currCell] = maximaCoordinates[0];
+									yCoords[currCell] = maximaCoordinates[1];
+
+									//We're here in terms of standardising things
 			
 									//Now that we're certain we've got the optimal coordinates, we save our LR image
 									selectWindow("LR");

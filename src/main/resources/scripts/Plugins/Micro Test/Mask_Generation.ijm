@@ -1,39 +1,79 @@
+function getMaskGenerationInputs() {
+
+	//These are the required inputs from the user
+	strings = newArray("What mask size would you like to use as a lower limit?",
+	"What mask size would you like to use as an upper limit?",
+	"What range would you like to use for mask size error?",
+	"What increment would you like to increase mask size by per loop?",
+	"What area should the local region around each cell location be? (in um)");
+
+	//TCS is target cell size, we iteratively threshold our cells to reach the 
+	//TCS +/- the range/ The TCS lower is the minimum TCS we want to get results 
+	//from, the TCS upper is the highest. Increment is how much we increase the 
+	//TCS we're using each iteration to go from TCS lower to TCS upper. Trace is 
+	//whether the user wants to manually trace processes to add to the analysis
+
+	Dialog.create("Info for each section");
+		
+	//Here we loop through the strings and add a box for numeric input for each
+	for(i=0; i<strings.length-1; i++) {
+		Dialog.addNumber(strings[i], 0);
+	}
+	Dialog.addNumber(strings[strings.length-1], 120);
+			
+	Dialog.show();
+						
+	//Retrieve user inputs and store the selections in the selection array
+	for(i=0; i<strings.length; i++) {
+		selection[i] = Dialog.getNumber();
+	}
+
+	return selection;
+
+}
+
+function makeImageNamesArray(directories, imageNameRaw, currSubstack, currXCoord, currYCoord) {
+
+	//We create an array to store different names we need for our mask generation where [0] is the name to save an image as, [1] is the
+	//fileName, and [2] is the LRName. [0] and [1] are repeats as we edit them differently within functions
+	imageNamesArray = newArray(directories[1] + imageNameRaw + "/Candidate Cell Masks/"+"Candidate mask for " + currSubstack + " x " + currXCoord +  " y " + currYCoord + " .tif", 
+	"Candidate mask for " + currSubstack + " x " + currXCoord +  " y " + currYCoord + " .tif",
+	"Local region for " + currSubstack + " x " + currXCoord +  " y " + currYCoord + " .tif");
+
+	return imageNamesArray;
 
 
-//These folder names are where we store various outputs from the processing 
-//(that we don't need for preprocessing)
-storageFolders=newArray("Cell Coordinates/", "Cell Coordinate Masks/",
-	"Somas/", "Candidate Cell Masks/", "Local Regions/", "Results/");
+}
+
+function openAndCalibrateAvgProjImage(avgProjImageLoc, iniValues) {
+	//We open the image then calibrate it before converting it to 8-bit
+	open(avgProjImageLoc);
+	avgProjImage = File.getName(avgProjImageLoc);
+	selectWindow(avgProjImage);
+	run("Properties...", "channels=1 slices=1 frames=1 unit=um pixel_width="+iniValues[0]+" pixel_height="+iniValues[1]+" voxel_depth="+iniValues[2]+"");
+}
+
+function coordinateWithinBuffer(avgProjImageLoc, currXCoord, currYCoord, bufferInPixels) {
+	selectWindow(File.getName(avgProjImageLoc));
+	getDimensions(originalWidth, originalHeight, originalChannels, originalSlices, originalFrames);
+	
+	//Calculate if our y or x coordinates or outside the bufer in pixels
+	yInsideBuffer = (currYCoord > bufferInPixels) || (currYCoord < (originalHeight - bufferInPixels));
+	xInsideBuffer = (currXCoord > bufferInPixels) || (currXCoord < (originalWidth - bufferInPixels));
+
+	return yInsideBuffer && xInsideBuffer;
+
+}
+
+selection = getMaskGenerationInputs();
+//"What mask size would you like to use as a lower limit?",
+//"What mask size would you like to use as an upper limit?",
+//"What range would you like to use for mask size error?",
+//"What increment would you like to increase mask size by per loop?",
+//"What area should the local region around each cell location be? (in um)");
 
 //Set the size of the square to be drawn around each cell in um
-LRSize = 120;
-
-//These are the required inputs from the user
-
-strings = newArray("What mask size would you like to use as a lower limit?",
-"What mask size would you like to use as an upper limit?",
-"What range would you like to use for mask size error?",
-"What increment would you like to increase mask size by per loop?");
-
-//TCS is target cell size, we iteratively threshold our cells to reach the 
-//TCS +/- the range/ The TCS lower is the minimum TCS we want to get results 
-//from, the TCS upper is the highest. Increment is how much we increase the 
-//TCS we're using each iteration to go from TCS lower to TCS upper. Trace is 
-//whether the user wants to manually trace processes to add to the analysis
-
-Dialog.create("Info for each section");
-	
-//Here we loop through the strings and add a box for numeric input for each
-for(i=0; i<strings.length; i++) {
-	Dialog.addNumber(strings[i], 0);
-}
-		
-Dialog.show();
-					
-//Retrieve user inputs and store the selections in the selection array
-for(i=0; i<strings.length; i++) {
-	selection[i] = Dialog.getNumber();
-}
+LRSize = selection[4];
 
 //Here we calculate how many loops we need to run to cover all the TCS values 
 //the user wants to use
@@ -51,15 +91,26 @@ imageName = getTableColumn(imagesToUseFile, "Image Name");
 autoPassedQA = getTableColumn(imagesToUseFile, "Auto QA Passed");
 manualPassedQA = getTableColumn(imagesToUseFile, "Manual QA Passed");
 
+//This is an array with the strings that come just before the information we want to retrieve from the ini file.
+iniTextStringsPre = newArray("x.pixel.sz = ", "y.pixel.sz = ", "z.spacing = ", "no.of.planes = ", "frames.per.plane = ");
+
+//Array to store the values we need to calibrate our image with
+iniValues =  getIniData(directories[3], iniTextStringsPre);
+//Index 0 is xPxlSz, then yPxlSz, zPxlSz, ZperT, FperZ
+
 ////////////////////////////////////Automatic Microglial Segmentation///////////////////////////////////////////////////////////
 
 //This is the main body of iterative thresholding, we open processed input images and use the coordinates of the cell locations previuosly 
 //input to determine cell locations and create cell masks
-for (i=0; i<imageName.length; i++) {	
+for (currImage=0; currImage<imageName.length; currImage++) {	
 
-		imageNameRaw = File.getNameWithoutExtension(imageName[i]);
+		imageNameRaw = File.getNameWithoutExtension(imageName[currImage]);
 
 		statusTable = directories[1]+imageNameRaw+"/Cell Coordinate Masks/Cell Position Marking.csv";
+
+		if(File.exists(statusTable) != 1) {
+			exit("Run cell detection first");
+		}
 
 		substackNames = getTableColumn(statusTable, 'Substack');
 		processed = getTableColumn(statusTable, 'Processed');
@@ -81,276 +132,69 @@ for (i=0; i<imageName.length; i++) {
 					}
 				}
 
-				//limits is an array to store the lower and upper limits of the cell area we're using within this TCS loop, calculated
-				//according to the error the user input
-				limits = newArray(currentLoopValues[0]-selection[2], currentLoopValues[0]+selection[2]);
-				//Selection: //[0] is TCSLower, [1] is TCSUpper, [2] is range, [3] is increment, [4] is framesToKeep, [5] is trace
-				//Limits: [0] is lower limit, [1] is upper
-	
-				//This is the directory for the current TCS
-				TCSDir=directories[1]+imageNames[3]+"/"+"TCS"+currentLoopValues[0]+"/";
-	
-				//Here we make a TCS specific directory for our input image if it doesn't already exist
-				if(File.exists(TCSDir)==0) {
-					File.makeDirectory(TCSDir);
-				}
-	
-				//Here we store the full names of the directories in an array for access later
-				storageFoldersArray=newArray(storageFolders.length);
-	
-				//Here we make sure we have all the working directories we need, either within or without the
-				//TCS specific directory
-				for(i0=0; i0<storageFolders.length; i0++) {
+				for(TCSLoops=0; TCSLoops<numberOfLoops; TCSLoops++) {
 
-					//Depending on what storageFolder we're working with, the dirToMake and parentDir vary
-					if(i0<3) {
-						dirToMake=directories[1]+imageNames[3]+"/"+storageFolders[i0];
-						parentDir=directories[1]+imageNames[3]+"/";	
-					} else {
-						dirToMake=TCSDir+storageFolders[i0];
-						parentDir=TCSDir;	
-					}
+					//limits is an array to store the lower and upper limits of the cell area we're using within this TCS loop, calculated
+					//according to the error the user input
+					limits = newArray(tcsValue[TCSLoops]-selection[2], tcsValue[TCSLoops]+selection[2]);
+					//Selection: //[0] is TCSLower, [1] is TCSUpper, [2] is range, [3] is increment, [4] is framesToKeep, [5] is trace
+					//Limits: [0] is lower limit, [1] is upper
+	
+					//This is the directory for the current TCS
+					TCSDir=directories[1]+imageNameRaw+"/"+"TCS"+tcsValue[TCSLoops]+"/";
+					prevTCSDir = directories[1]+imageNameRaw+"/"+"TCS"+tcsValue[TCSLoops-1]+"/";
 
-					//Either way, we store the parentDir and storageFolders[i0] value in storageFoldersArray
-					storageFoldersArray[i0]=parentDir+storageFolders[i0];
+					makeDirectories(TCSDir);
 
-					//And if dirToMake doesn't exist, we make it
-					if(File.exists(dirToMake)==0) {
-						File.makeDirectory(dirToMake);
-					}	
-				}
-	
-				//Here if we haven't already looped through this TCS, we enter the process
-				if(currentLoopValues[1]==0) {
-	
-					//We use this variable to store the total number of cells we've counted for a given image
-					totalCells=0;
-	
-					//These arrays are used to store all the X and Y coordinates, and the substack names associated with them
-					tempX = newArray(1);
-					tempY = newArray(1);
-					tempName = newArray(1);
+					if(tcsMasksGenerated[TCSLoops] == -1) {
 
-					//Here we get out the cell postion marking informatino about whther the positions were makred
-					//correctly or if there were issues with the image
-					open(directories[1]+imageNames[3]+"/Cell Coordinate Masks/Cell Position Marking.csv");
-					selectWindow("Cell Position Marking.csv");
-					QCArray = Table.getColumn("QC");
-					ProcessedArray = Table.getColumn("Processed");
-					detectionArray = Table.getColumn("Bad Detection");
-					regArray = Table.getColumn("Bad Registration");
-					Table.reset("Cell Position Marking.csv");
-	
-					coordPath = directories[1] + imageNames[3] + "/Cell Coordinates/";
-	
-					noStacks = getFileList(coordPath);
-					//Here we loop through all 3 substacks of cell placements and add together all the cells in them
-					for(i0=0; i0<noStacks.length; i0++) {
-					
-						//Find the number of coordinates for the associated chunk by opening the coordinates table and finding nResults
-						imgName = substring(noStacks[i0], indexOf(noStacks[i0], "for ")+4, indexOf(noStacks[i0], ".csv"));
-						inputpath=directories[1]+imageNames[3]+"/Cell Coordinates/"+noStacks[i0];
-						print(ProcessedArray[i0], QCArray[i0], detectionArray[i0], regArray[i0]);
+						substackCoordinatesLoc = directories[1] + imageNameRaw + "/Cell Coordinates/" + "CP Coordinates for Substack(" substackNames[currSubstack] + ").csv";
+						open(substackCoordinatesLoc);
 
-						//If the image has been processed, QC'd, and theres is no bad detection or bad registration, then proceed
-						if(ProcessedArray[i0] == 1 && QCArray[i0] == 1 && detectionArray[i0] == 0 && regArray[i0] == 0) {
-						
-							//Add the nResults of the cell coordinates to the totalCells count
-							//run("Clear Results");
-							print(inputpath);
-							open(inputpath);
-							totalCells += Table.size;
-	
-							//Here we create an array to store the name of the image chunk 
-							substackName = newArray(Table.size);
-							for(i1=0; i1<Table.size; i1++) {
-								substackName[i1] = imgName;
-							}
-	
-							//Here we get out all the X and Y coordinates from the results table and store all the X's in tempX, and all the Y's
-							//in tempY, as well as the substackNames in tempName
-	
-							selectWindow("CP coordinates for " + imgName + ".csv");
-							currentX = Table.getColumn("X");
-							currentY = Table.getColumn("Y");
-							tempX = Array.concat(tempX,currentX);
-							tempY = Array.concat(tempY, currentY);
-							tempName = Array.concat(tempName, substackName);
-							selectWindow("CP coordinates for " + imgName + ".csv");
-							Table.reset("CP coordinates for " + imgName + ".csv");
-						}
+						xCoords = getTableColumn(substackCoordinatesLoc, 'X');
+						yCoords = getTableCOlumn(substackCoordinatesLoc, 'Y');
 
-					}
+						cellMaskTable = TCSDir + "Mask Generation.csv";
 
+						maskName = getOrCreateTableColumn(cellMaskTable, "Mask Name", -1, xCoords);
+						maskTry = getOrCreateTableColumn(cellMaskTable, "Mask Try", -1, xCoords);
+						maskSuccess = getOrCreateTableColumn(cellMaskTable, "Mask Success", -1, xCoords);
+						xOpt = getOrCreateTableColumn(cellMaskTable, "xOpt", -1, xCoords);
+						yOpt = getOrCreateTableColumn(cellMaskTable, "yOpt", -1, xCoords);
 
-					//If we have at least one coordinates to analyze
-					if(totalCells!=0) {
+						prevTCSCellMaskTable = prevTCSDir + "Mask Generation.csv";
+						prevMaskSuccess = getOrCreateTableColumn(prevTCSCellMaskTable, "Mask Success", 1, xCoords);
 
-						//Here we cut out all the zeros from the tempX, tempY,and tempName arrays and move the data into X,Y, and finalSub arrays
-						X = newArray(1);
-						Y = newArray(1);
-						finalSub = newArray(1);
-	
-						X = removeZeros(tempX, X);
-						Y = removeZeros(tempY, Y);
-						finalSub = removeZeros(tempName, finalSub);
-					
-						//Here we make arrays to fill with the name of the current cell and whether we've attempted to create a mask from it already that we fill
-						//with 1's by default
-						maskSuccessPrev = newArray(totalCells);
-						Array.fill(maskSuccessPrev, 1);
-	
-						//If we're not in the first TCS loop
-
-						if(TCSLoops>0) {
-		
-							//We create an array to store these values from our previous TCS loop
-							prevLoopValues = newArray(TCSColumns.length);
-							//[0] is TCS, [1] is masks generated, [2] is QC checked, [3] is analysed, [4] is wrong obj, [5] is TCS error
-				
-	
-							//Here we fill the array with the values from the previuos TCS loop as stored in TCSValues
-	
-							for(i0=0; i0<TCSColumns.length; i0++) {
-								prevLoopValues[i0] = TCSValues[(numberOfLoops*i0)+(TCSLoops-1)];
-							}
-	
-							//Here we open the Mask Generation.csv file from the previous TCS loop and get out the information
-							//about which mask generation was successful and store these in the maskSuccessPrev array
-							previousTCSDir=directories[1]+imageNames[3]+"/TCS"+prevLoopValues[0]+"/";
-	
-
-							run("Clear Results");
-							open(previousTCSDir+"Mask Generation.csv");
-							selectWindow("Mask Generation.csv");
-							resultsNo=Table.size; 	
-							for(i0=0; i0<resultsNo; i0++) {
-								maskSuccessPrev[i0] = Table.get("Mask Success", i0);
-							}
-							Table.reset("Mask Generation.csv");
-							//Array.show(maskSuccessPrev);
-							//waitForUser("Check this line 2820");
-							Table.update;
-		
-						}
-
-						//This is an array of headers for data we want to record for the cells we're going to be creating masks for - xOpt and yOpt are the x and y coordinates
-						//that are located on the pixel with the maximum grey value on that cell, details follow later
-						//Mask name is the name of the mask, try is whether we tried generating a mask for it or not, success is whether it was a success
-						valuesToRecord = newArray("Mask Name", "Mask Try", "Mask Success", "xOpt", "yOpt");
-					
-						//This is an array that will store all the data associated wtih the headers but in a single dimension, where the first maskDirFiles.length
-						//indices correspond to "Mask Name", then "Mask Try" etc.
-						analysisRecordInput = newArray(totalCells*valuesToRecord.length);
-					
-						//These are the locations of any previously generated tables that contain the valuesToRecord info
-						resultsTableRefs = newArray(TCSDir+"Mask Generation.csv", TCSDir+"Mask Generation.csv", TCSDir+"Mask Generation.csv",
-												TCSDir+"Mask Generation.csv", TCSDir+"Mask Generation.csv");
-				
-						//This is whether the results to get are strings or not
-						resultsAreStrings = newArray(true, false, false, false, false);
-			
-						//Here we fill our analysisRecordInput with the data we want as outlined in valuesToRecord if it exists from previous runs of the macro
-						fillArray(analysisRecordInput, resultsTableRefs, valuesToRecord, resultsAreStrings, true);
-			
-						//We then concatenate on the x and y coordinates of our cell positons as well the as the name of the substack these coordinates are in to our
-						//analysisRecordInput array
-						analysisRecordInput = Array.concat(analysisRecordInput, X);
-						analysisRecordInput = Array.concat(analysisRecordInput, Y);
-						analysisRecordInput = Array.concat(analysisRecordInput, finalSub);
-						
-						//We then also add on the headers for this data to our valuestoRecord array and make a new headers array that contains them both
-						toAdd = newArray("X Coord", "Y Coord", "Substack Name");
-						tableLabels = Array.concat(valuesToRecord, toAdd);
-	
-						//Here make a table that we fill with information that corresponds to table lables i.e.
-						// "Mask Name", "Mask Try", "Mask Success", "xOpt", "yOpt", "X Coord", "Y Coord", "Substack Name"
-			
-						Table.create("Mask Generation PreChange");
-						selectWindow("Mask Generation PreChange");
-						for(i1=0; i1<totalCells; i1++) {
-							for(i2=0; i2<tableLabels.length; i2++) {
-								if(i2 == 0 || i2 == 7) {
-									stringValue = analysisRecordInput[(totalCells*i2)+i1];
-									Table.set(tableLabels[i2], i1, stringValue);
-								} else {
-									Table.set(tableLabels[i2], i1, analysisRecordInput[(totalCells*i2)+i1]);
-								}
-							}
-						}
-
-						if(isOpen("Mask Generation PreChange")==false) {
-							setBatchMode("exit and display");
-							waitForUser("Table not made or disappearead");
-						}
-	
 						//We now loop through all the cells for this given input image
-						for(i0=0; i0<totalCells; i0++) {
-						
-							//Here we create an array to store the following data for a given cell
-							currentMaskValues = newArray(8);
-							//[0] is mask name, [1] is mask try, [2] mask success, [3] xopt, [4] yopt, [5] x, [6] y, [7] substack
-	
-							//We fill our currentMaskValues with the correct data from analysisRecordInput by indexing into it in the appropriate locations
-							for(i1=0; i1<currentMaskValues.length; i1++) {
-								currentMaskValues[i1] = analysisRecordInput[(totalCells*i1)+i0];
-							}
-						
-							//We create an array to store different names we need for our mask generation where [0] is the name to save an image as, [1] is the
-							//fileName, and [2] is the LRName. [0] and [1] are repeats as we edit them differently within functions
-							imageNamesArray = newArray(storageFoldersArray[3]+"Candidate mask for " + finalSub[i0] + " x " + X[i0] +  " y " + Y[i0] + " .tif", 
-											"Candidate mask for " + finalSub[i0] + " x " + X[i0] +  " y " + Y[i0] + " .tif",
-											"Local region for " + finalSub[i0] + " x " + X[i0] + " y " + Y[i0] + " .tif");
-											//[0] is saveName, [1] is fileName, [2] is LRName
-		
-							//Here we set the cell name of the current mask to fileName
-							currentMaskValues[0]=imageNamesArray[1];
+						for(currCell=0; currCell<xCoords.length; currCell++) {
+
+							imageNamesArray = makeImageNamesArray(directories, imageNameRaw, substackNames[currsubstack], xCoords[currCell], yCoords[currCell]);
+							//[0] is saveName, [1] is fileName, [2] is LRName
 						
 							//If the current mask hasn't been tried, and making the mask previously was a success then we try to make a mask - the reason we check previously
 							//is because our TCS sizes increase with each loop, so if we couldn't make a mask on a previous loop where the TCS was smaller, that means the mask 
 							//must have been touching the edges of the image, so with a larger TCS, then we're guaranteed that the mask will touch the edges so we don't bother
 							//trying to make a mask for it anymore
+							if(maskTry[currCell]==-1 && prevMaskSuccess[currCell]==1) {
 	
-							if(currentMaskValues[1]==0 && maskSuccessPrev[i0]==1) {
-	
-								//If we haven't previously retrieved the calibration values for this image, then we fill the
-								//iniTextValuesMicrons array with the calibration information and set gottenCalibration to true
-								if(gottenCalibration == false) {
-
-									getIniData(directoryName, iniTextValuesMicrons);
-									gottenCalibration = true;
-								}
-
-								//Array.show(iniTextValuesMicrons);
-								//waitForUser("Check if this is wrongly calibrated - last index should be 1 if wrong - also need to check how this relates to hippo vs V1");
-			
 								//This is an array to store the size of the local region in pixels (i.e. 120um in pixels)
-								LRLengthPixels=(LRSize*(1/iniTextValuesMicrons[0]));
+								LRLengthPixels=(LRSize*(1/iniValues[0]));
 								//[3] is size of the local region, [0] is the pixel size
-							
-								//If the CP mask image isn't already open
-								if(!isOpen("CP mask for " + finalSub[i0] + ".tif")) {
-		
-									//We open the image then calibrate it before converting it to 8-bit
-									open(directories[1]+imageNames[3]+"/Cell Coordinate Masks/CP mask for " + finalSub[i0]+".tif");
-									imgName = getTitle();
-									run("Select None");
-									run("Properties...", "channels=1 slices=1 frames=1 unit=um pixel_width="+iniTextValuesMicrons[0]+" pixel_height="+iniTextValuesMicrons[1]+" voxel_depth="+iniTextValuesMicrons[2]+"");
-									getDimensions(originalWidth, originalHeight, originalChannels, originalSlices, originalFrames);
-									run("8-bit");	
-								}
-							
-								//Here we create an array to store the coordinates we're going to be analysing for this cell
-								coordsArray = newArray(X[i0], Y[i0]);
-										
+
 								//Here we work out the number of pixels that represent 5 microns so we can use this to calculate if the coordinates are within the 5um buffer zone
 								//of the edge of the image
-								fiveMicronsInPixels=5*(1/iniTextValuesMicrons[0]);
+								fiveMicronsInPixels=5*(1/iniValues[0]);
+
+								avgProjImageLoc = directories[1]+imageNameRaw+"/Cell Coordinate Masks/CP mask for Substack (" + currSubstack+").tif";
+								openAndCalibrateAvgProjImage(avgProjImageLoc, iniValues);
+								proceed = coordinateWithinBuffer(avgProjImageLoc, xCoords[currCell], yCoords[currCell], fiveMicronsInPixels);		
 		
 								//If the y coordinate isn't less than 5 microns from the bottom or top edges of the image, and the x coordinate isn't less than 5 pixels from the width, then we
 								//proceed
-								if (!(coordsArray[1]<=fiveMicronsInPixels) || !(coordsArray[1]>=(originalHeight-fiveMicronsInPixels)) || !(coordsArray[0]>=(originalWidth-fiveMicronsInPixels)) || !(coordsArray[0]<=fiveMicronsInPixels)) { 	
-		
+								if(proceed == true){
+
+									//We're up to here in terms of standardising this approach
+
 									//Here we store x and y values that we would use to draw a 120x120um square aruond our coordinate - we store the coordinates
 									//that would be the top left corner of this square as that is what we need to input to draw it
 									newCoordsArray = newArray(coordsArray[0]-(LRLengthPixels/2), coordsArray[1]-(LRLengthPixels/2));

@@ -310,6 +310,19 @@ function getMaskStatus(area, limits, touching, stabiised) {
 
 }
 
+function saveGeneratedMask(imageNamesArray) {
+
+	selectWindow("Connected");
+	run("Select None");
+	saveAs("tiff", imageNamesArray[0]);
+	selectWindow(imageNamesArray[1]);
+	rename("Connected");
+
+	selectWindow("Connected");
+	run("Close");
+
+}
+
 selection = getMaskGenerationInputs();
 //"What mask size would you like to use as a lower limit?",
 //"What mask size would you like to use as an upper limit?",
@@ -490,16 +503,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 									//[0] is saveName, [1] is fileName, [2] is LRName
 
 									if(nextIteration == 0) {
-
-										selectWindow("Connected");
-										run("Select None");
-										saveAs("tiff", imageNamesArray[0]);
-										selectWindow(imageNamesArray[1]);
-										rename("Connected");
-				
-										selectWindow("Connected");
-										run("Close");
-
+										saveGeneratedMask(imageNamesArray);
 									}
 
 									//These variables are changed depending on how many iterations a mask has stabilised for (regardless of whether it fits

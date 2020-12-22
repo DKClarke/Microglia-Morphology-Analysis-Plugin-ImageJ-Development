@@ -239,6 +239,77 @@ function getCurrentMaskArea(xCoord, yCoord, threshold) {
 
 }
 
+function tooCloseToEdge(imageName, bufferSize) {
+
+	//Takes the mask of the cell and turns it into its bounding quadrilateral, 
+	//then gets an array of all the coordinates of that quadrilateral
+	selectWindow(imageName);
+	getDimensions(functionWidth, functionHeight, functionChannels, functionSlices, functionFrames);
+	run("Create Selection");
+	getSelectionBounds(xF, yF, widthF, heightF)
+
+	if(xF <= bufferSize || (xF+widthF) >= (functionWidth - bufferSize)) {
+		xTouchesEdge = true;
+	}
+
+	if(yF <= bufferSize || (yF+heightF) >= (functionHeight - bufferSize)) {
+		yTouchesEdge = true;
+	}
+
+	return xTouchesEdge || yTouchesEdge;
+
+
+}
+
+function getMaskStatus(area, limits, touching, stabiised) {
+
+	nextIteration = 0;
+
+	if (area<limits[0]) {
+
+		//If we're checking for touching below the area limits or once the image 
+		//has stabilized, touching means we disregard this cell and so we set 
+		//output to false
+		if(touching == true) {
+			nextIteration = -1;
+		} else {
+			nextIteration = 1;
+		}
+	
+	//If its within our limits, we check if its touching edges, and if it isn't touching any edges we save it, else we keep going
+	} else if (area<=limits[1] && area>=limits[0]) {
+
+		//If we're checking for touching below the area limits or once the image 
+		//has stabilized, touching means we disregard this cell and so we set 
+		//output to false
+		if(stabilised == true && touching == true) {
+			nextIteration = -1;
+		}
+		
+		//Otherwise if we're checking for a cell within the area limits, this 
+		//isn't necessarily the only outcome so we set output to true to continue
+		//iterating to try and find a new threshold value that means we're in the 
+		//limits but not touching
+		if(stabilised == false && touching == true) {
+			nextIteration = 1;
+		}
+
+		//Otherwise if the image is within the area limits or has a stabilised area, 
+		//we clear our selection, and save the image using the saveName and fileName
+		//inputs before setting output to false as we're now done with this cell
+		if(touching == false) {
+			nextIteration = 0;
+		}
+
+	//If we're above the limits, we continue iterating
+	} else if (area>limits[1]) {
+		nextIteration=1;	
+	}
+
+	return nextIteration;
+
+}
+
 selection = getMaskGenerationInputs();
 //"What mask size would you like to use as a lower limit?",
 //"What mask size would you like to use as an upper limit?",
@@ -403,156 +474,34 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 									
 									//Here we check the area output, and if it fits in certain conditions we either proceed with the iterative thresholding or move onto the next cell - more explanation can be found
 									//with the corresponding functions for each condition
-
-									function tooCloseToEdge(imageName, bufferSize) {
-
-										//Takes the mask of the cell and turns it into its bounding quadrilateral, 
-										//then gets an array of all the coordinates of that quadrilateral
-										selectWindow(imageName);
-										getDimensions(functionWidth, functionHeight, functionChannels, functionSlices, functionFrames);
-										run("Create Selection");
-										getSelectionBounds(xF, yF, widthF, heightF)
-
-										if(xF <= bufferSize || (xF+widthF) >= (functionWidth - bufferSize)) {
-											xTouchesEdge = true;
-										}
-
-										if(yF <= bufferSize || (yF+heightF) >= (functionHeight - bufferSize)) {
-											yTouchesEdge = true;
-										}
-
-										return xTouchesEdge || yTouchesEdge;
-
-									
-									}
-
-									function touchingCheck(imageName, saveName, fileName, type) {
-
-										//These are arrays of strings that we're going to print out to inform the user 
-										//of the decision of this function, what we print will come from 
-										//firstStringArray if the mask isn't touching the edges of the image and the 
-										//secondStringArray if it is, which string index depends on the type of check 
-										//we're running
-										firstStringArray = newArray("", 
-																	"Cell within limits and not touching edges, saving", 
-																	"Cell size stabilized and didn't touch edges, saving");
-										secondStringArray =  newArray("High threshold / low area mask touches edges already, ignoring cell", 
-																	  "Cell within limits but touches edges, resuming iterative thresholding", 
-																	  "Cell size stabilized but touches edges, ignoring");
-									
-										//The distance in image units that we use as a buffer around the edges of our 
-										//image - i.e., if our image is within "distance" of the edges of our image, 
-										//we say its touching the edges
-										distance = 5;
-									
-										touching = tooCloseToEdge(imageName, distance);
-
-										if(touching == true) {
-
-											//Print out that the mask touches the edges and depending on the type of 
-											//check we're running, the appropriate conclusion
-											print(secondStringArray[type]);
-								
-											//If we're checking for touching below the area limits or once the image 
-											//has stabilized, touching means we disregard this cell and so we set 
-											//output to false
-											if(type==0 || type == 2) {
-												output = false; 
-								
-											//Otherwise if we're checking for a cell within the area limits, this 
-											//isn't necessarily the only outcome so we set output to true to continue
-											//iterating to try and find a new threshold value that means we're in the 
-											//limits but not touching
-											} else if (type ==1) {
-												output = true;
-											}
-											
-										}
-									
-										//If the mask isn't touching, we print out the appropriate message for the 
-										//type of check we're doing
-										if(touching==false) {
-											print(firstStringArray[type]);
-									
-											//If the image is below the area limit, we continue threshold iterations
-											if(type==0) {
-												output = true;
-									
-											//Otherwise if the image is within the area limits or has a stabilised area, 
-											//we clear our selection, and save the image using the saveName and fileName
-											//inputs before setting output to false as we're now done with this cell
-											} else if (type==1 || type==2) {
-												selectWindow(imageName);
-												run("Select None");
-												saveAs("tiff", saveName);
-												selectWindow(fileName);
-												rename(imageName);
-												output = false;
-											}
-										}
-									
-										//Return our output value
-										return output;
-									}
 									
 									//If it less than our lower limit, then we check if its touching edges and it not, we keep iterating
 									nextIteration = false;
 									touching = tooCloseToEdge("Connected", fiveMicronsInPixels);
 
-									//Continue cleaning this up
+									print("Area is = "+currentLoopValues[0]+"um^2 +/- "+selection[2]+"um^2");
 
-									if (area<limits[0]) {
+									//If -1, then the mask has failed
+									//If 0, then the masks have passed
+									//If 1, then we keep iterating
+									nextIteration = getMaskStatus(area, limits, touching, stabilised);
 
-										//If we're checking for touching below the area limits or once the image 
-										//has stabilized, touching means we disregard this cell and so we set 
-										//output to false
-										if(touching == true) {
-											nextIteration = true;
-										} else {
-											nextIteration = false;
-										}
-									
-									//If its within our limits, we check if its touching edges, and if it isn't touching any edges we save it, else we keep going
-									} else if (area<=limits[1] && area>=limits[0]) {
+									imageNamesArray = makeImageNamesArray(directories, imageNameRaw, substackNames[currsubstack], xCoords[currCell], yCoords[currCell]);
+									//[0] is saveName, [1] is fileName, [2] is LRName
 
-										print("Area is = "+currentLoopValues[0]+"um^2 +/- "+selection[2]+"um^2");
+									if(nextIteration == 0) {
 
-										//If we're checking for touching below the area limits or once the image 
-										//has stabilized, touching means we disregard this cell and so we set 
-										//output to false
-										if(stabilised == true && touching == true) {
-											nextIteration = false;
-										}
-										
-										//Otherwise if we're checking for a cell within the area limits, this 
-										//isn't necessarily the only outcome so we set output to true to continue
-										//iterating to try and find a new threshold value that means we're in the 
-										//limits but not touching
-										if(stabilised == false && touching == true) {
-											nextIteration = true;
-										}
+										selectWindow("Connected");
+										run("Select None");
+										saveAs("tiff", imageNamesArray[0]);
+										selectWindow(imageNamesArray[1]);
+										rename("Connected");
+				
+										selectWindow("Connected");
+										run("Close");
 
-										//Otherwise if the image is within the area limits or has a stabilised area, 
-										//we clear our selection, and save the image using the saveName and fileName
-										//inputs before setting output to false as we're now done with this cell
-										if(touching == false) {
-											nextIteration = false;
-											maskSuccess = true;
-											selectWindow(imageName);
-											run("Select None");
-											saveAs("tiff", saveName);
-											selectWindow(fileName);
-											rename(imageName);
-										}
-		
-									//If we're above the limits, we continue iterating
-									} else if (area>limits[1]) {
-										threshContinue=true;	
 									}
-			
-									selectWindow(imgNamemask);
-									run("Close");
-									
+
 									//These variables are changed depending on how many iterations a mask has stabilised for (regardless of whether it fits
 									// the TCS +/- the range, as if it stabilized 3 times we keep it), and loopcount ticks up each iteration we go through
 									//as we use this value to change the otsu we use for the subsequent iteration 

@@ -203,7 +203,7 @@ function findMaximaInCoords() {
 	run("Select None");
 	run("Find Maxima...", "noise=1000 output=[Point Selection]");
 	getSelectionCoordinates(tempX, tempY);
-	adjustedCellCoords = newArray(tempX, tempY);
+	adjustedCellCoords = newArray(tempX, tempY, topValue);
 	selectWindow("LR-1");
 	run("Close");
 	selectWindow("Connected");
@@ -261,7 +261,7 @@ function tooCloseToEdge(imageName, bufferSize) {
 
 }
 
-function getMaskStatus(area, limits, touching, stabiised) {
+function getMaskStatus(area, limits, touching, stabilised) {
 
 	nextIteration = 0;
 
@@ -320,6 +320,31 @@ function saveGeneratedMask(imageNamesArray) {
 
 	selectWindow("Connected");
 	run("Close");
+
+}
+
+//Function to check if the inputValue is above the topLimit - this is so that if 
+//our thresholding calculated value ends up above the highest grey value in the 
+//image then we set inputValue to that top value
+function valueCheck(inputValue, topLimit) {
+	
+	if(inputValue>=topLimit) {
+		inputValue = topLimit-1;
+	}
+
+	//We want a rounded threshold value since the images are in 8-bit, so we do 
+	//that before returning it
+	return round(inputValue);
+}
+
+function calculateNextThreshold(t1, a1, ms, n) {
+
+	firstClause = t1
+	secondClause = t1 * ((a1 - ms) / (n * ms));
+
+	nextThresholdRaw = firstClause + secondClause;
+
+	return nextThresholdRaw;
 
 }
 
@@ -434,6 +459,8 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 							//must have been touching the edges of the image, so with a larger TCS, then we're guaranteed that the mask will touch the edges so we don't bother
 							//trying to make a mask for it anymore
 							if(maskTry[currCell]==-1 && prevMaskSuccess[currCell]==1) {
+
+								maskName[currCell] = imageNamesArray[0];
 	
 								//This is an array to store the size of the local region in pixels (i.e. 120um in pixels)
 								LRLengthPixels=(LRSize*(1/iniValues[0]));
@@ -475,6 +502,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 									getConnectedMask(xCoords[currCell], yCoords[currCell], otsu);
 
 									maximaCoordinates = findMaximaInCoords();
+									topValue = maximaCoordinates[2];
 
 									lrSaveLoc = directories[1] + imageNameRaw + "/" + "Local Regions/" + imageNamesArray[2];
 			
@@ -483,7 +511,10 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 									//Here we are finding the same connected regions using the maxima as our point selection and then measuring the area
 									//of the connected region to get an initial area size associated with the starting otsu value
-									area = getCurrentMaskArea(maximaCoordinates[0], maximaCoordinates[1], otsu)
+									firstArea = getCurrentMaskArea(maximaCoordinates[0], maximaCoordinates[1], otsu)
+
+									xOpt[currCell] = maximaCoordinates[0];
+									yOpt[currCell] = maximaCoordinates[1];
 									
 									//Here we check the area output, and if it fits in certain conditions we either proceed with the iterative thresholding or move onto the next cell - more explanation can be found
 									//with the corresponding functions for each condition
@@ -492,133 +523,105 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 									nextIteration = false;
 									touching = tooCloseToEdge("Connected", fiveMicronsInPixels);
 
-									print("Area is = "+currentLoopValues[0]+"um^2 +/- "+selection[2]+"um^2");
+									print("Area is = "+firstArea+"um^2 +/- "+selection[2]+"um^2");
 
 									//If -1, then the mask has failed
 									//If 0, then the masks have passed
 									//If 1, then we keep iterating
-									nextIteration = getMaskStatus(area, limits, touching, stabilised);
-
-									imageNamesArray = makeImageNamesArray(directories, imageNameRaw, substackNames[currsubstack], xCoords[currCell], yCoords[currCell]);
-									//[0] is saveName, [1] is fileName, [2] is LRName
-
-									if(nextIteration == 0) {
-										saveGeneratedMask(imageNamesArray);
-									}
+									nextIteration = getMaskStatus(firstArea, limits, touching, stabilised);
 
 									//These variables are changed depending on how many iterations a mask has stabilised for (regardless of whether it fits
 									// the TCS +/- the range, as if it stabilized 3 times we keep it), and loopcount ticks up each iteration we go through
 									//as we use this value to change the otsu we use for the subsequent iteration 
-									maskGenerationVariables = newArray(0,0);
-									//[0] is stabilized, [1] is loopcount
-
-									imageT = getList("image.titles");
-									otherT =  getList("window.titles");
-									Array.show(imageT, otherT);
-									found = false;
-									for(currName = 0; currName < otherT.length; currName++) {
-										if(otherT[currName] == "Mask Generation PreChange") {
-											found = true;
-											currName = 1e99;
-										}
-									}
-									if(found==false) {
-										setBatchMode("Exit and Display");
-										waitForUser("Mask generation not present before entering while loop");
-										setBatchMode(true);
-									}
+									stabilised = false;
+									stabilisedCount = 0;
+									loopCount = 0;
 			
-									//Here we are proceeding with the iterative thresholding
-									while (threshContinue==true) {
+									//Here if we are proceeding with the iterative thresholding
+									while (nextIteration==1) {
 						
-										maskGenerationVariables[1]++; //Each iteration we increase loopCount, this modifies how we alter the threshold value
-					
-										//Here we have to constantly check if our Otsu value is above the top and adjust accordingly
-										otsu = valueCheck(otsu, topValue);
+										loopCount++; //Each iteration we increase loopCount, this modifies how we alter the threshold value
 			
-										//This array stores out current otsu value normalised to 255 in index [0], and the next threshold value we'll use in postion [1] based
-										//on a formula outlined later
-										otsuVariables = newArray(otsu/255, (((otsu/255)*(((area-currentLoopValues[0])/maskGenerationVariables[1])/currentLoopValues[0]))+(otsu/255))*255);
-										//[0] is otsuNorm, [1] is nextThresh
-	
+										//This variable stores the next threshold value we'll use based on a formula outlined later
+										if(loopCount == 1) {
+											t1 = otsu;
+											a1 = firstArea;
+										} else {
+											t1 = nextThreshold;
+											a1 = areaNew;
+										}
+
+										ms = tcsValue[TCSLoops];
+										n = loopCount;
+
+										nextThresholdRaw = calculateNextThreshold(t1, a1, ms, n);
+
 										//print("nextThresh: ", otsuVariables[1]);
 										//print("otsuNorm: ", otsu/255);
 										//print("area: ", area);
 										//print("TCS: ", currentLoopValues[0]);
 										//print("Loop count: ", maskGenerationVariables[1]);
-										
-										//nextTRaw=((otsuNorm*(((area-TCS[TCSLoops])/loopCount)/TCS[TCSLoops]))+otsuNorm); //Eq for calculating next threshold
-		
-										//Similarly here to check if our next threshold value is above the top and adjust accordingly
-										otsuVariables[1] = valueCheck(otsuVariables[1], topValue);
+												
+										//Check if our next threshold is higher than the maximum pixel value in the image - if so, set to
+										//maximal pixel value
+										nextThreshold = valueCheck(nextThresholdRaw, topValue);
 					
 										//Here we get another area from our find connected regions
-										selectWindow("LR");
 										//print("otsu to check: ", otsuVariables[1]);
 										//print("bottom value: ", bottomValue);
 										//print("top value: ", topValue);
-										areaNew = getConnectedArea(currentMaskValues[3], currentMaskValues[4], otsuVariables[1]);
-										imgNamemask = getTitle();
+										areaNew = getCurrentMaskArea(xCoords[currCell], yCoords[currCell], nextThreshold)
 						
 										//If we get the same area for 3 iterations we exit the iterative process, so here we count identical areas 
 										//(but if for any one instance they are not identical, we rest the counter)
-										if (areaNew==area){
-											maskGenerationVariables[0]++;
+										if (areaNew==firstArea){
+											stabilisedCount++;
 										} else {
-											maskGenerationVariables[0]=0;	
+											stabilisedCount=0;	
+										}
+
+										if(stabilisedCount == 3) {
+											stabilised = true;
 										}
 			
 										//Here, as before, we look at which condition the mask falls into and act appropriately to either continue iterating, 
 										//save the mask, or discard the mask
-		
-										//If we're below the lower limit for area and not stabilised, we check for touching
-										if(areaNew<limits[0] && maskGenerationVariables[0]!=3) {
-											threshContinue=touchingCheck(imgNamemask, imgNamemask, imgNamemask, 0);
-		
-										//If we're within limits and not stabilised, we touchingCheck
-										} else if (areaNew<=limits[1] && areaNew>=limits[0] && maskGenerationVariables[0]!=3) {	
-											print("Area is = "+currentLoopValues[0]+"um^2 +/- "+selection[2]+"um^2");
-											threshContinue=touchingCheck(imgNamemask, imageNamesArray[0], imageNamesArray[1],1);
-										
-										//If we're over the limits and not stabilised, we continue
-										} else if (areaNew>limits[1] && maskGenerationVariables[0]!=3) {
-											threshContinue=true;
-										
-										//If we're stabilised, we touching check with type 2
-										} else if (maskGenerationVariables[0] == 3) {
-											threshContinue = touchingCheck(imgNamemask, imageNamesArray[0], imageNamesArray[1],2);
-										}
-										
-										selectWindow(imgNamemask);
-										run("Close");
+										touching = tooCloseToEdge("Connected", fiveMicronsInPixels);
+										nextIteration = getMaskStatus(areaNew, limits, touching, stabilised);
 						
 										//print("Old area:" + area);
 										//print("Old otsu: "+ otsu);
 										//print("Current area: "+ areaNew);
 										//print("Current otsu:" + otsuVariables[1]);
-										print("Stabilised:" + maskGenerationVariables[0]);
+										//print("Stabilised:" + maskGenerationVariables[0]);
 					
 										//If we're continuing, then we reset our areas and otsus and go through this again
-										if (threshContinue==true) {
+										if (nextIteration==1) {
 											print("Continuing");
-											otsu=otsuVariables[1];
-											area=areaNew;
 										
 										//If we're done with this cell, we set maskSuccess to 1 if we've saved a mask
 										} else {
 											print("Finished");
-											if(File.exists(imageNamesArray[0])==1) {
-												currentMaskValues[2] = 1;
-											}
 										}
 			
 									} //Once the output of threshContinue==false, then we exit the process
+
+									imageNamesArray = makeImageNamesArray(directories, imageNameRaw, substackNames[currsubstack], xCoords[currCell], yCoords[currCell]);
+									//[0] is saveName, [1] is fileName, [2] is LRName
+
+									//If the mask has passed, save it
+									if(nextIteration == 0) {
+										saveGeneratedMask(imageNamesArray);
+										maskSuccess[currCell] = 1;
+									} else {
+										maskSuccess[currCell] = 0;
+									}
+
 									selectWindow("LR");
 									run("Close");
 								}
-									
-								//Now that we've attempted mask generation (successful or otherwise) we set this variable to 1	
-								currentMaskValues[1]=1;	
+
+								maskTry[currCell] = 1;
 			
 								//Update and save our TCS analysis table
 

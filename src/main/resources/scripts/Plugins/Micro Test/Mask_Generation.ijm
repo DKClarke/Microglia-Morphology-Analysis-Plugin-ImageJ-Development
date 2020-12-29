@@ -53,7 +53,7 @@ function openAndCalibrateAvgProjImage(avgProjImageLoc, iniValues) {
 	run("Properties...", "channels=1 slices=1 frames=1 unit=um pixel_width="+iniValues[0]+" pixel_height="+iniValues[1]+" voxel_depth="+iniValues[2]+"");
 }
 
-function coordinateWithinBuffer(avgProjImageLoc, currXCoord, currYCoord, bufferInPixels) {
+function coordinatesWithinBuffer(avgProjImageLoc, currXCoord, currYCoord, bufferInPixels) {
 	selectWindow(File.getName(avgProjImageLoc));
 	getDimensions(originalWidth, originalHeight, originalChannels, originalSlices, originalFrames);
 	
@@ -261,8 +261,14 @@ function tooCloseToEdge(imageName, bufferSize) {
 
 }
 
-function getMaskStatus(area, limits, touching, stabilised) {
+function getMaskStatus(area, currentTCS, TCSRange, touching, stabilised) {
 
+	//limits is an array to store the lower and upper limits of the cell area we're using within this TCS loop, calculated
+	//according to the error the user input
+	limits = newArray(currentTCS-TCSRange, currentTCS+TCSRange);
+	//Selection: //[0] is TCSLower, [1] is TCSUpper, [2] is range, [3] is increment, [4] is framesToKeep, [5] is trace
+	//Limits: [0] is lower limit, [1] is upper
+	
 	nextIteration = 0;
 
 	if (area<limits[0]) {
@@ -348,6 +354,29 @@ function calculateNextThreshold(t1, a1, ms, n) {
 
 }
 
+function substacksToUse(substackTableLoc, nameCol, processedCol, QCCol) {
+
+	//We return an array of substack names to use if they have been processed an QAs
+	substackNames = getTableColumn(substackTableLoc, nameCol);
+	processed = getTableColumn(substackTableLoc, processedCol);
+	qaValue = getTableColumn(substackTableLoc, QCCol);
+
+	output = newArray(0);
+	added = 0;
+	for(currSub = 0; currSub<substackNames.length; currSub++) {
+		if(processed[currSub] == 1 && qaValues[currSub] == 1) {
+			if(added == 0) {
+				output[0] = substackNames[currSub];
+			} else {
+				output = Array.concat(output, newArray(substackNames[currSub]));
+			}
+		}
+	}
+
+	return output;
+
+}
+
 selection = getMaskGenerationInputs();
 //"What mask size would you like to use as a lower limit?",
 //"What mask size would you like to use as an upper limit?",
@@ -371,8 +400,6 @@ if(File.exists(imagesToUseFile) != 1) {
 
 //If we already have a table get out our existing status indicators
 imageName = getTableColumn(imagesToUseFile, "Image Name");
-autoPassedQA = getTableColumn(imagesToUseFile, "Auto QA Passed");
-manualPassedQA = getTableColumn(imagesToUseFile, "Manual QA Passed");
 
 //This is an array with the strings that come just before the information we want to retrieve from the ini file.
 iniTextStringsPre = newArray("x.pixel.sz = ", "y.pixel.sz = ", "z.spacing = ", "no.of.planes = ", "frames.per.plane = ");
@@ -395,47 +422,38 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 			exit("Run cell detection first");
 		}
 
-		substackNames = getTableColumn(statusTable, 'Substack');
-		processed = getTableColumn(statusTable, 'Processed');
-		qaValue = getTableCOlumn(statusTable, 'QC');
+		substackNames = substacksToUse(statusTable, 'Substack', 'Processed', 'QC');
 
 		for(currSubstack = 0; currSubstack < substackNames.length; currSubstack++) {
-			if(processed[currSubstack == 1 && qaValue[currSubstack] == 1) {
 
-				tcsStatusTable = directories[1]+imageNameRaw+"/TCS Status Substack(" + substackNames[currSubstack] +").csv";
+			tcsStatusTable = directories[1]+imageNameRaw+"/TCS Status Substack(" + substackNames[currSubstack] +").csv";
 
-				tcsValue = getOrCreateTableColumn(tcsStatusTable, "TCS", -1, numberOfLoops);
-				tcsMasksGenerated = getOrCreateTableColumn(tcsStatusTable, "Masks Generated", -1, numberOfLoops);
-				tcsQCChecked = getOrCreateTableColumn(tcsStatusTable, "QC Checked", -1, numberOfLoops);
-				tcsAnalysed = getOrCreateTableColumn(tcsStatusTable, "Analysed", -1, numberOfLoops);
+			tcsValue = getOrCreateTableColumn(tcsStatusTable, "TCS", -1, numberOfLoops);
+			tcsMasksGenerated = getOrCreateTableColumn(tcsStatusTable, "Masks Generated", -1, numberOfLoops);
+			tcsQCChecked = getOrCreateTableColumn(tcsStatusTable, "QC Checked", -1, numberOfLoops);
+			tcsAnalysed = getOrCreateTableColumn(tcsStatusTable, "Analysed", -1, numberOfLoops);
 
-				if(tcsValue[0] == -1) {
-					for(TCSLoops=0; TCSLoops<numberOfLoops; TCSLoops++) {
-						tcsValue[TCSLoops] = selection[0]+(selection[3]*TCSLoops);
-					}
-				}
-
+			if(tcsValue[0] == -1) {
 				for(TCSLoops=0; TCSLoops<numberOfLoops; TCSLoops++) {
+					tcsValue[TCSLoops] = selection[0]+(selection[3]*TCSLoops);
+				}
+			}
 
-					//limits is an array to store the lower and upper limits of the cell area we're using within this TCS loop, calculated
-					//according to the error the user input
-					limits = newArray(tcsValue[TCSLoops]-selection[2], tcsValue[TCSLoops]+selection[2]);
-					//Selection: //[0] is TCSLower, [1] is TCSUpper, [2] is range, [3] is increment, [4] is framesToKeep, [5] is trace
-					//Limits: [0] is lower limit, [1] is upper
-	
-					//This is the directory for the current TCS
-					TCSDir=directories[1]+imageNameRaw+"/"+"TCS"+tcsValue[TCSLoops]+"/";
-					prevTCSDir = directories[1]+imageNameRaw+"/"+"TCS"+tcsValue[TCSLoops-1]+"/";
-
-					makeDirectories(TCSDir);
+			for(TCSLoops=0; TCSLoops<tcsValue.length; TCSLoops++) {
 
 					if(tcsMasksGenerated[TCSLoops] == -1) {
+
+						//This is the directory for the current TCS
+						TCSDir=directories[1]+imageNameRaw+"/"+"TCS"+tcsValue[TCSLoops]+"/";
+						prevTCSDir = directories[1]+imageNameRaw+"/"+"TCS"+tcsValue[TCSLoops-1]+"/";
+
+						makeDirectories(TCSDir);
 
 						substackCoordinatesLoc = directories[1] + imageNameRaw + "/Cell Coordinates/" + "CP Coordinates for Substack(" substackNames[currSubstack] + ").csv";
 						open(substackCoordinatesLoc);
 
 						xCoords = getTableColumn(substackCoordinatesLoc, 'X');
-						yCoords = getTableCOlumn(substackCoordinatesLoc, 'Y');
+						yCoords = getTableColumn(substackCoordinatesLoc, 'Y');
 
 						cellMaskTable = TCSDir + "Mask Generation.csv";
 
@@ -450,9 +468,6 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 						//We now loop through all the cells for this given input image
 						for(currCell=0; currCell<xCoords.length; currCell++) {
-
-							imageNamesArray = makeImageNamesArray(directories, imageNameRaw, substackNames[currsubstack], xCoords[currCell], yCoords[currCell]);
-							//[0] is saveName, [1] is fileName, [2] is LRName
 						
 							//If the current mask hasn't been tried, and making the mask previously was a success then we try to make a mask - the reason we check previously
 							//is because our TCS sizes increase with each loop, so if we couldn't make a mask on a previous loop where the TCS was smaller, that means the mask 
@@ -460,6 +475,9 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 							//trying to make a mask for it anymore
 							if(maskTry[currCell]==-1 && prevMaskSuccess[currCell]==1) {
 
+								imageNamesArray = makeImageNamesArray(directories, imageNameRaw, substackNames[currsubstack], xCoords[currCell], yCoords[currCell]);
+								//[0] is saveName, [1] is fileName, [2] is LRName
+	
 								maskName[currCell] = imageNamesArray[0];
 	
 								//This is an array to store the size of the local region in pixels (i.e. 120um in pixels)
@@ -472,7 +490,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 								avgProjImageLoc = directories[1]+imageNameRaw+"/Cell Coordinate Masks/CP mask for Substack (" + currSubstack+").tif";
 								openAndCalibrateAvgProjImage(avgProjImageLoc, iniValues);
-								proceed = coordinateWithinBuffer(avgProjImageLoc, xCoords[currCell], yCoords[currCell], fiveMicronsInPixels);		
+								proceed = coordinatesWithinBuffer(avgProjImageLoc, xCoords[currCell], yCoords[currCell], fiveMicronsInPixels);		
 		
 								//If the y coordinate isn't less than 5 microns from the bottom or top edges of the image, and the x coordinate isn't less than 5 pixels from the width, then we
 								//proceed
@@ -528,7 +546,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 									//If -1, then the mask has failed
 									//If 0, then the masks have passed
 									//If 1, then we keep iterating
-									nextIteration = getMaskStatus(firstArea, limits, touching, stabilised);
+									nextIteration = getMaskStatus(firstArea, tcsValue[TCSLoops], selection[2], touching, stabilised);
 
 									//These variables are changed depending on how many iterations a mask has stabilised for (regardless of whether it fits
 									// the TCS +/- the range, as if it stabilized 3 times we keep it), and loopcount ticks up each iteration we go through
@@ -587,7 +605,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 										//Here, as before, we look at which condition the mask falls into and act appropriately to either continue iterating, 
 										//save the mask, or discard the mask
 										touching = tooCloseToEdge("Connected", fiveMicronsInPixels);
-										nextIteration = getMaskStatus(areaNew, limits, touching, stabilised);
+										nextIteration = getMaskStatus(areaNew, tcsValue[TCSLoops], selection[2], touching, stabilised);
 						
 										//print("Old area:" + area);
 										//print("Old otsu: "+ otsu);
@@ -606,15 +624,10 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 			
 									} //Once the output of threshContinue==false, then we exit the process
 
-									imageNamesArray = makeImageNamesArray(directories, imageNameRaw, substackNames[currsubstack], xCoords[currCell], yCoords[currCell]);
-									//[0] is saveName, [1] is fileName, [2] is LRName
-
 									//If the mask has passed, save it
 									if(nextIteration == 0) {
 										saveGeneratedMask(imageNamesArray);
 										maskSuccess[currCell] = 1;
-									} else {
-										maskSuccess[currCell] = 0;
 									}
 
 									selectWindow("LR");
@@ -622,101 +635,18 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 								}
 
 								maskTry[currCell] = 1;
+
+								if(maskSuccess[currCell] == -1) {
+									maskSuccess[currCell] = 0;
+								}
 			
-								//Update and save our TCS analysis table
+								//Update and save our cellMaskTable = TCSDir + "Mask Generation.csv" table
 
-								imageT = getList("image.titles");
-								otherT =  getList("window.titles");
-								Array.show(imageT, otherT);
-								found = false;
-								for(currName = 0; currName < otherT.length; currName++) {
-									if(otherT[currName] == "Mask Generation PreChange") {
-										found = true;
-										currName = 1e99;
-									}
-								}
-								if(found==false) {
-									setBatchMode("Exit and Display");
-									waitForUser("Issue");
-									setBatchMode(true);
-								}
-								
-								selectWindow("Mask Generation PreChange");
-								for(i1=0; i1<tableLabels.length; i1++) {
-									if(i1==0 || i1 == 7) {
-										stringValue = currentMaskValues[i1];
-										Table.set(tableLabels[i1], i0, stringValue);
-									} else {
-										Table.set(tableLabels[i1], i0, currentMaskValues[i1]);
-									}
-								}
-								
-								//We then close it - as we create a new one for the next cell - otherwise we get issues with writing to things
-								//whilst they're open
-		
-								if (isOpen("Results")) {
-									run("Clear Results");
-								}
-								if(roiManager("count")>0) {
-									roiManager("deselect");
-									roiManager("delete");
-								}
-		
-								selectWindow(imgName);
-								close("\\Others");
-
-								imageT = getList("image.titles");
-								otherT =  getList("window.titles");
-								Array.show(imageT, otherT);
-								foundNow = false;
-								for(currName = 0; currName < otherT.length; currName++) {
-									if(otherT[currName] == "Mask Generation PreChange") {
-										foundNow = true;
-										currName = 1e99;
-									}
-								}
-								if(foundNow==false && found == true) {
-									setBatchMode("Exit and Display");
-									waitForUser("Found eralier but not after closing");
-									setBatchMode(true);
-								}
-											
 							}
-								
 						}
-				
-						selectWindow("Mask Generation PreChange");
-						Table.update;
-						Table.save(TCSDir+"Mask Generation.csv");
-						maskGTitle = Table.title;
-						Table.rename(maskGTitle, "Mask Generation PreChange");	
-						
-						//Set masks generated to 1 for this TCS
-						currentLoopValues[1]=1;
-						
-						//Update and save our TCS analysis table
-						selectWindow("TCS Status");
-						for(i0=0; i0<TCSColumns.length; i0++) {
-							Table.set(TCSColumns[i0], TCSLoops, currentLoopValues[i0]);
-						}
-						Table.update;
-						Table.save(directories[1]+imageNames[3]+"/TCS Status.csv");
-						Housekeeping();
-
-					}	
-				}	
-				
-				if(isOpen("TCS Status")) {
-					Table.rename("TCS Status", "ToBChanged");
-				} else if (isOpen("TCS Status.csv")) {
-					Table.rename("TCS Status.csv", "ToBChanged");
+					}
 				}
-				
-			}
-
-			if(isOpen("TobChanged")) {
-				selectWindow("ToBChanged");
-				run("Close");
 			}
 		}
+	}
 }

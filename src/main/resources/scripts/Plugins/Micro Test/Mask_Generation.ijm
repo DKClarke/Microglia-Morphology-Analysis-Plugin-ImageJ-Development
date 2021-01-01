@@ -145,7 +145,7 @@ function createLRImage(avgProjImageLoc, LRCoords, LRLengthArray) {
 
 }
 
-function getOtsuValue(xCoord, yCoord) {
+function getOtsuValue(avgProjImageLoc, xCoord, yCoord) {
 
 	//We then auto threshold the LR and then get the lower and upper threshold levels from the otsu method and call the lower threshold
 	//otsu
@@ -157,6 +157,7 @@ function getOtsuValue(xCoord, yCoord) {
 
 	//We get the grey value at that point selection, and then if the lower threshold of the image
 	//is bigger than that value, we set it to that value
+	selectWindow(File.getName(avgProjImageLoc));
 	pointValue = (getPixel(xCoord, yCoord)) - 1;
 	if(otsu>=pointValue) {
 		otsu = pointValue-1;
@@ -206,7 +207,7 @@ function findMaximaInCoords() {
 	run("Select None");
 	run("Find Maxima...", "noise=1000 output=[Point Selection]");
 	getSelectionCoordinates(tempX, tempY);
-	adjustedCellCoords = newArray(tempX, tempY, topValue);
+	adjustedCellCoords = newArray(tempX[0], tempY[0], topValue);
 	selectWindow("LR-1");
 	run("Close");
 	selectWindow("Connected");
@@ -249,12 +250,14 @@ function tooCloseToEdge(imageName, bufferSize) {
 	selectWindow(imageName);
 	getDimensions(functionWidth, functionHeight, functionChannels, functionSlices, functionFrames);
 	run("Create Selection");
-	getSelectionBounds(xF, yF, widthF, heightF)
+	getSelectionBounds(xF, yF, widthF, heightF);
 
+	xTouchesEdge = false;
 	if(xF <= bufferSize || (xF+widthF) >= (functionWidth - bufferSize)) {
 		xTouchesEdge = true;
 	}
 
+	yTouchesEdge = false;
 	if(yF <= bufferSize || (yF+heightF) >= (functionHeight - bufferSize)) {
 		yTouchesEdge = true;
 	}
@@ -624,6 +627,8 @@ function makeDirectories(directories) {
     }
 }
 
+setBatchMode(true);
+
 //Get user input into where our working directory, and image storage directories, reside
 directories = getWorkingAndStorageDirectories();
 //[0] is input, [1] is output, [2] is done (working directories) [3] is directoryName (storage directory)
@@ -773,13 +778,21 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 								createLRImage(avgProjImageLoc, LRCoords, LRLengthArray);
 
-								otsu = getOtsuValue(xCoords[currCell], yCoords[currCell]);
+								otsu = getOtsuValue(avgProjImageLoc, xCoords[currCell], yCoords[currCell]);
 
 								print("Initial threshold value of " + otsu);
 
-								getConnectedMask(xCoords[currCell], yCoords[currCell], otsu);
+								//Get a connected mask centered on the centre of the local region - as this is centered on our chosen cell coordinate
+								getConnectedMask(LRLengthArray[0]/2, LRLengthArray[1]/2, otsu);
 
+								//Get the coordinates of the maxima in the local region
 								maximaCoordinates = findMaximaInCoords();
+
+								//Calculate this maxima coordinate in the original image
+								maximaCoordinatesInOriginal = newArray(2);
+								maximaCoordinatesInOriginal[0] = xCoords[currCell] + (maximaCoordinates[0] - (LRLengthArray[0]/2));
+								maximaCoordinatesInOriginal[1] = yCoords[currCell] + (maximaCoordinates[1] - (LRLengthArray[1]/2));
+
 								topValue = maximaCoordinates[2];
 
 								lrSaveLoc = directories[1] + imageNameRaw + "/" + "Local Regions/" + imageNamesArray[2];
@@ -787,13 +800,9 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 								//Now that we're certain we've got the optimal coordinates, we save our LR image
 								saveLRImage(lrSaveLoc);
 
-								//Array.show(maskName, maskTry, maskSuccess, xCoords, yCoords, xOpt, yOpt);
-								setBatchMode("exit and display");
-								waitForUser("Cells");
-
 								//Here we are finding the same connected regions using the maxima as our point selection and then measuring the area
 								//of the connected region to get an initial area size associated with the starting otsu value
-								firstArea = getCurrentMaskArea(maximaCoordinates[0], maximaCoordinates[1], otsu)
+								firstArea = getCurrentMaskArea(maximaCoordinates[0], maximaCoordinates[1], otsu);
 
 								xOpt[currCell] = maximaCoordinates[0];
 								yOpt[currCell] = maximaCoordinates[1];
@@ -806,6 +815,9 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 								touching = tooCloseToEdge("Connected", fiveMicronsInPixels);
 
 								print("Area is = "+firstArea+"um^2 +/- "+selection[2]+"um^2");
+
+								setBatchMode("exit and display");
+								waitForUser("Cells");
 
 								//If -1, then the mask has failed
 								//If 0, then the masks have passed

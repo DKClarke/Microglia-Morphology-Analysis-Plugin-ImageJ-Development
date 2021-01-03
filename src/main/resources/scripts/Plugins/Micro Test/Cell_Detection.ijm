@@ -176,9 +176,21 @@ function fillAndSaveSubstackCoordinatesTable(currentMaskGen, newX, newY, directo
 	if(newX.length == 0) {
 		Table.setColumn("X", -1);
 		Table.setColumn("Y", -1);
+		Table.setColumn("xOpt", -1);
+		Table.setColumn("yOpt", -1);
+
 	} else {
 		Table.setColumn("X", newX);
 		Table.setColumn("Y", newY);
+
+		xOpt = Array.copy(newX);
+		yOpt = Array.copy(newY);
+		Array.fill(xOpt, -1);
+		Array.fill(yOpt, -1);
+
+		Table.setColumn("xOpt", xOpt);
+		Table.setColumn("yOpt", yOpt);
+
 	}
 
 	//Save this table
@@ -342,6 +354,15 @@ function addSelectedCoordinateStoExisting(tableLoc) {
 	selectWindow(File.getName(tableLoc));
 	Table.setColumn("X", newX);
 	Table.setColumn("Y", newY);
+
+	xOpt = Array.copy(newX);
+	Array.fill(xOpt, -1);
+	yOpt = Array.copy(newY);
+	Array.fill(yOpt, -1);
+
+	Table.setColumn("xOpt", xOpt);
+	Table.setColumn("yOpt", yOpt);
+
 	Table.save(tableLoc);
 	toClose = Table.title();
 	selectWindow(toClose);

@@ -387,17 +387,13 @@ function substacksToUse(substackTableLoc, nameCol, processedCol, QCCol) {
 
 }
 
-function saveMaskGenerationTable(maskName, maskTry, maskSuccess, xOpt, yOpt, xCoords, yCoords, saveLoc) {
+function saveMaskGenerationTable(maskName, maskTry, maskSuccess, saveLoc) {
 	//Save these arrays into a table
 	Table.create("Mask Generation.csv");
 	selectWindow("Mask Generation.csv");
 	Table.setColumn("Mask Name", maskName);
 	Table.setColumn("Mask Try", maskTry);
 	Table.setColumn("Mask Success", maskSuccess);
-	Table.setColumn("xOpt", xOpt);
-	Table.setColumn("yOpt", yOpt);
-	Table.setColumn("X", xCoords);
-	Table.setColumn("Y", yCoords);
 	Table.save(saveLoc);
 	selectWindow("Mask Generation.csv");
 	run("Close");
@@ -645,6 +641,81 @@ function saveSubstackCoordinatesLocTable(xCoords, yCoords, xOpt, yOpt, saveLoc) 
 
 }
 
+function makeOrRetrieveLR(lrSaveLoc, xCoord, yCoord, LRLengthPixels, avgProjImageLoc) {
+
+	//If we already have made a LR image, retrieve it
+	if(File.exists(lrSaveLoc) == 1) {
+		open(lrSaveLoc);
+		selectWindow(File.getName(lrSaveLoc));
+		rename("LR");
+
+	//Else make it and save it
+	} else {
+
+		print("Making local region image centered on X: " + xCoords[currCell] + " Y: " + yCoords[currCell]);
+
+		LRCoords = getLRCoords(newArray(xCoords[currCell], yCoords[currCell]), LRLengthPixels);
+		//Here we store x and y values that we would use to draw a 120x120um square aruond our coordinate - we store the coordinates
+		//that would be the top left corner of this square as that is what we need to input to draw it	
+
+		//Issues with this
+		createLRImage(avgProjImageLoc, LRCoords, newArray(LRLengthPixels, LRLengthPixels));
+
+		//Now that we're certain we've got the optimal coordinates, we save our LR image
+		saveLRImage(lrSaveLoc);
+
+	}
+
+}
+
+function findOrRetrieveOptimalCoordinates(avgProjImageLoc, xCoords, yCoords, xOpt, yOpt, currCell, substackCoordinatesLoc) {
+
+	//If we don't have any optimised cell coordinates yet for this cell, find them
+	if(xOpt[currCell] == -1) {
+
+		//Here if we've already made the LR image, no need to remake it - just load it in
+		//Also, if we already have the optimal coordinate for that local region, save it in a table rather than
+		//recalculating
+		//Save optimal coordinates in the CP coordinate for substack table
+
+		otsu = getOtsuValue(avgProjImageLoc, xCoords[currCell], yCoords[currCell]);
+
+		print("Initial threshold value of " + otsu);
+
+		selectWindow("LR");
+		getDimensions(LRWidth, LRHeight, LRChannels, LRSlices, LRFrames);
+
+		makePoint(LRWidth/2, LRHeight/2);
+		initialTopValue = getValue("Max");
+		run("Select None");
+
+		initialThreshold = valueCheck(otsu, initialTopValue);
+		//Get a connected mask centered on the centre of the local region - as this is centered on our chosen cell coordinate
+		getConnectedMask(LRWidth/2, LRHeight/2, initialThreshold);
+
+		//Get the coordinates of the maxima in the local region
+		maximaCoordinates = findMaximaInCoords();
+		xOpt[currCell] = maximaCoordinates[0];
+		yOpt[currCell] = maximaCoordinates[1];
+
+		saveSubstackCoordinatesLocTable(xCoords, yCoords, xOpt, yOpt, substackCoordinatesLoc);
+	
+	//Else, store them
+	} else {
+
+		selectWindow("LR");
+		run("Select None");
+		makePoint(xOpt[currCell], yOpt[currCell]);
+		topValue = getValue("Max");
+		run("Select None");
+		maximaCoordinates = newArray(xOpt[currCell], yOpt[currCell], topValue);
+
+	}
+
+	return maximaCoordinates;
+
+}
+
 //setBatchMode(true);
 
 //Get user input into where our working directory, and image storage directories, reside
@@ -780,79 +851,16 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 	
 								//This array stores the width and height of our image so we can check against these
 								selectWindow(File.getName(avgProjImageLoc));
-								getDimensions(originalWidth, originalHeight, originalChannels, originalSlices, originalFrames);
-								dimensionsCheckingArray = newArray(originalWidth, originalHeight);
-
-								LRCoords = getLRCoords(newArray(xCoords[currCell], yCoords[currCell]), LRLengthPixels);
-								//Here we store x and y values that we would use to draw a 120x120um square aruond our coordinate - we store the coordinates
-								//that would be the top left corner of this square as that is what we need to input to draw it
 
 								//Making and saving local regions, running first Otsu method and getting initial value on which to base iterative process	
 								print("Coordinate number " + (currCell+1) + "/" + xCoords.length);
 
 								lrSaveLoc = directories[1] + imageNameRaw + "/" + "Local Regions/" + imageNamesArray[2];
 
-								//If we already have made a LR image, retrieve it
-								if(File.exists(lrSaveLoc) == 1) {
-									open(lrSaveLoc);
-									selectWindow(File.getName(lrSaveLoc));
-									rename("LR");
+								makeOrRetrieveLR(lrSaveLoc, xCoords[currCell], yCoords[currCell], LRLengthPixels, avgProjImageLoc);	
 
-								//Else make it and save it
-								} else {
-
-									print("Making local region image centered on X: " + xCoords[currCell] + " Y: " + yCoords[currCell]);
-
-									//Issues with this
-									createLRImage(avgProjImageLoc, LRCoords, newArray(LRLengthPixels, LRLengthPixels));
-			
-									//Now that we're certain we've got the optimal coordinates, we save our LR image
-									saveLRImage(lrSaveLoc);
-
-								}
-
-								//If we don't have any optimised cell coordinates yet for this cell, find them
-								if(xOpt[currCell] == -1) {
-
-									//Here if we've already made the LR image, no need to remake it - just load it in
-									//Also, if we already have the optimal coordinate for that local region, save it in a table rather than
-									//recalculating
-									//Save optimal coordinates in the CP coordinate for substack table
-
-									otsu = getOtsuValue(avgProjImageLoc, xCoords[currCell], yCoords[currCell]);
-
-									print("Initial threshold value of " + otsu);
-
-									selectWindow("LR");
-									getDimensions(LRWidth, LRHeight, LRChannels, LRSlices, LRFrames);
-
-									makePoint(LRWidth/2, LRHeight/2);
-									initialTopValue = getValue("Max");
-									run("Select None");
-
-									initialThreshold = valueCheck(otsu, initialTopValue);
-									//Get a connected mask centered on the centre of the local region - as this is centered on our chosen cell coordinate
-									getConnectedMask(LRWidth/2, LRHeight/2, initialThreshold);
-
-									//Get the coordinates of the maxima in the local region
-									maximaCoordinates = findMaximaInCoords();
-									xOpt[currCell] = maximaCoordinates[0];
-									yOpt[currCell] = maximaCoordinates[1];
-
-									saveSubstackCoordinatesLocTable(xCoords, yCoords, xOpt, yOpt, substackCoordinatesLoc);
+								maximaCoordinates = findOrRetrieveOptimalCoordinates(avgProjImageLoc, xCoords, yCoords, xOpt, yOpt, currCell, substackCoordinatesLoc);
 								
-								//Else, store them
-								} else {
-
-									selectWindow("LR");
-									run("Select None");
-									makePoint(xOpt[currCell], yOpt[currCell]);
-									topValue = getValue("Max");
-									run("Select None");
-									maximaCoordinates = newArray(xOpt[currCell], yOpt[currCell], topValue);
-
-								}
-
 								print('Previous coordinates');
 								print(xCoords[currCell]);
 								print(yCoords[currCell]);

@@ -631,6 +631,20 @@ function makeDirectories(directories) {
     }
 }
 
+function saveSubstackCoordinatesLocTable(xCoords, yCoords, xOpt, yOpt, saveLoc) {
+	//Save these arrays into a table
+	Table.create(File.getName(saveLoc));
+	selectWindow(File.getName(saveLoc));
+	Table.setColumn("X", xCoords);
+	Table.setColumn("Y", yCoords);
+	Table.setColumn("xOpt", xOpt);
+	Table.setColumn("yOpt", yOpt);
+	Table.save(saveLoc);
+	selectWindow(File.getName(saveLoc));
+	run("Close");
+
+}
+
 //setBatchMode(true);
 
 //Get user input into where our working directory, and image storage directories, reside
@@ -712,18 +726,17 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 					substackFileSuffix = "Substack (" + substackNames[currSubstack] + ")";
 					substackCoordinatesLoc = directories[1] + imageNameRaw + "/Cell Coordinates/" + "CP Coordinates for " + substackFileSuffix + ".csv";
-					open(substackCoordinatesLoc);
 
 					xCoords = getTableColumn(substackCoordinatesLoc, 'X');
 					yCoords = getTableColumn(substackCoordinatesLoc, 'Y');
+					xOpt = getOrCreateTableColumn(substackCoordinatesLoc, "xOpt", -1, xCoords.length);
+					yOpt = getOrCreateTableColumn(substackCoordinatesLoc, "yOpt", -1, xCoords.length);
 
 					cellMaskTable = TCSDir + "Mask Generation.csv";
 
 					maskName = getOrCreateTableColumn(cellMaskTable, "Mask Name", -1, xCoords.length);
 					maskTry = getOrCreateTableColumn(cellMaskTable, "Mask Try", -1, xCoords.length);
 					maskSuccess = getOrCreateTableColumn(cellMaskTable, "Mask Success", -1, xCoords.length);
-					xOpt = getOrCreateTableColumn(cellMaskTable, "xOpt", -1, xCoords.length);
-					yOpt = getOrCreateTableColumn(cellMaskTable, "yOpt", -1, xCoords.length);
 
 					if(TCSLoops > 0) {
 						prevTCSDir = directories[1]+imageNameRaw+"/"+"TCS"+tcsValue[TCSLoops-1]+"/";
@@ -774,46 +787,71 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 								//Here we store x and y values that we would use to draw a 120x120um square aruond our coordinate - we store the coordinates
 								//that would be the top left corner of this square as that is what we need to input to draw it
 
-								LRLengthArray = getLRLengths(newArray(xCoords[currCell], yCoords[currCell]), dimensionsCheckingArray, LRLengthPixels);
-								//This array is created to store the length in x and y of the local region we're going to draw - in theory it should be 120um
-								//for both directions but if our coordinate is close enough to the edge of our image that this isn't true, we adjust it
-
 								//Making and saving local regions, running first Otsu method and getting initial value on which to base iterative process	
 								print("Coordinate number " + (currCell+1) + "/" + xCoords.length);
-								print("Making local region image centered on X: " + xCoords[currCell] + " Y: " + yCoords[currCell]);
-
-								//Issues with this
-								Array.show(LRCoords);
-								print(LRLengthPixels);
-								createLRImage(avgProjImageLoc, LRCoords, newArray(LRLengthPixels, LRLengthPixels));
 
 								lrSaveLoc = directories[1] + imageNameRaw + "/" + "Local Regions/" + imageNamesArray[2];
-		
-								//Now that we're certain we've got the optimal coordinates, we save our LR image
-								saveLRImage(lrSaveLoc);
 
-								//Here if we've already made the LR image, no need to remake it - just load it in
-								//Also, if we already have the optimal coordinate for that local region, save it in a table rather than
-								//recalculating
-								//Save optimal coordinates in the CP coordinate for substack table
+								//If we already have made a LR image, retrieve it
+								if(File.exists(lrSaveLoc) == 1) {
+									open(lrSaveLoc);
+									selectWindow(File.getName(lrSaveLoc));
+									rename("LR");
 
-								otsu = getOtsuValue(avgProjImageLoc, xCoords[currCell], yCoords[currCell]);
+								//Else make it and save it
+								} else {
 
-								print("Initial threshold value of " + otsu);
+									print("Making local region image centered on X: " + xCoords[currCell] + " Y: " + yCoords[currCell]);
 
-								selectWindow("LR");
-								getDimensions(LRWidth, LRHeight, LRChannels, LRSlices, LRFrames);
+									//Issues with this
+									createLRImage(avgProjImageLoc, LRCoords, newArray(LRLengthPixels, LRLengthPixels));
+			
+									//Now that we're certain we've got the optimal coordinates, we save our LR image
+									saveLRImage(lrSaveLoc);
 
-								makePoint(LRWidth/2, LRHeight/2);
-								initialTopValue = getValue("Max");
-								run("Select None");
+								}
 
-								initialThreshold = valueCheck(otsu, initialTopValue);
-								//Get a connected mask centered on the centre of the local region - as this is centered on our chosen cell coordinate
-								getConnectedMask(LRWidth/2, LRHeight/2, initialThreshold);
+								//If we don't have any optimised cell coordinates yet for this cell, find them
+								if(xOpt[currCell] == -1) {
 
-								//Get the coordinates of the maxima in the local region
-								maximaCoordinates = findMaximaInCoords();
+									//Here if we've already made the LR image, no need to remake it - just load it in
+									//Also, if we already have the optimal coordinate for that local region, save it in a table rather than
+									//recalculating
+									//Save optimal coordinates in the CP coordinate for substack table
+
+									otsu = getOtsuValue(avgProjImageLoc, xCoords[currCell], yCoords[currCell]);
+
+									print("Initial threshold value of " + otsu);
+
+									selectWindow("LR");
+									getDimensions(LRWidth, LRHeight, LRChannels, LRSlices, LRFrames);
+
+									makePoint(LRWidth/2, LRHeight/2);
+									initialTopValue = getValue("Max");
+									run("Select None");
+
+									initialThreshold = valueCheck(otsu, initialTopValue);
+									//Get a connected mask centered on the centre of the local region - as this is centered on our chosen cell coordinate
+									getConnectedMask(LRWidth/2, LRHeight/2, initialThreshold);
+
+									//Get the coordinates of the maxima in the local region
+									maximaCoordinates = findMaximaInCoords();
+									xOpt[currCell] = maximaCoordinates[0];
+									yOpt[currCell] = maximaCoordinates[1];
+
+									saveSubstackCoordinatesLocTable(xCoords, yCoords, xOpt, yOpt, substackCoordinatesLoc);
+								
+								//Else, store them
+								} else {
+
+									selectWindow("LR");
+									run("Select None");
+									makePoint(xOpt[currCell], yOpt[currCell]);
+									topValue = getValue("Max");
+									run("Select None");
+									maximaCoordinates = newArray(xOpt[currCell], yOpt[currCell], topValue);
+
+								}
 
 								print('Previous coordinates');
 								print(xCoords[currCell]);
@@ -823,19 +861,11 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 								print(maximaCoordinates[0]);
 								print(maximaCoordinates[1]);
 
-								//Calculate this maxima coordinate in the original image
-								maximaCoordinatesInOriginal = newArray(2);
-								maximaCoordinatesInOriginal[0] = xCoords[currCell] + (maximaCoordinates[0] - (LRWidth/2));
-								maximaCoordinatesInOriginal[1] = yCoords[currCell] + (maximaCoordinates[1] - (LRHeight/2));
-
 								topValue = maximaCoordinates[2];
 
 								//Here we are finding the same connected regions using the maxima as our point selection and then measuring the area
 								//of the connected region to get an initial area size associated with the starting otsu value
 								firstArea = getCurrentMaskArea(maximaCoordinates[0], maximaCoordinates[1], otsu);
-
-								xOpt[currCell] = maximaCoordinates[0];
-								yOpt[currCell] = maximaCoordinates[1];
 								
 								//Here we check the area output, and if it fits in certain conditions we either proceed with the iterative thresholding or move onto the next cell - more explanation can be found
 								//with the corresponding functions for each condition
@@ -956,10 +986,10 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 								print("Mask generation failed");
 							}
 
-							Array.show(maskName, maskTry, maskSuccess, xOpt, yOpt, xCoords, yCoords);
+							Array.show(maskName, maskTry, maskSuccess);
 							waitForUser("Check table");
 
-							saveMaskGenerationTable(maskName, maskTry, maskSuccess, xOpt, yOpt, xCoords, yCoords, cellMaskTable);
+							saveMaskGenerationTable(maskName, maskTry, maskSuccess, cellMaskTable);
 		
 							//Update and save our cellMaskTable = TCSDir + "Mask Generation.csv" table
 

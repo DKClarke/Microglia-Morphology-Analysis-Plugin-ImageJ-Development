@@ -133,6 +133,7 @@ function createLRImage(avgProjImageLoc, LRCoords, LRLengthArray) {
 
 	imageTitle = File.getName(avgProjImageLoc);
 	selectWindow(imageTitle);
+	run("Select None");
 
 	//Here we make our local region based on all the values we've calculated
 	makeRectangle(LRCoords[0], LRCoords[1], LRLengthArray[0], LRLengthArray[1]);
@@ -335,9 +336,6 @@ function saveGeneratedMask(saveLoc) {
 	saveAs("tiff", saveLoc);
 	selectWindow(File.getName(saveLoc));
 	rename("Connected");
-
-	selectWindow("Connected");
-	run("Close");
 
 }
 
@@ -782,23 +780,37 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 								//Making and saving local regions, running first Otsu method and getting initial value on which to base iterative process	
 								print("Coordinate number " + (currCell+1) + "/" + xCoords.length);
-								print("Making local region image of " + LRLengthArray[0]*2 + " x " + LRLengthArray[1]*2 + " centered on X: " + xCoords[currCell] + " Y: " + yCoords[currCell]);
+								print("Making local region image centered on X: " + xCoords[currCell] + " Y: " + yCoords[currCell]);
 
-								createLRImage(avgProjImageLoc, LRCoords, LRLengthArray);
+								//Issues with this
+								Array.show(LRCoords);
+								print(LRLengthPixels);
+								createLRImage(avgProjImageLoc, LRCoords, newArray(LRLengthPixels, LRLengthPixels));
+
+								lrSaveLoc = directories[1] + imageNameRaw + "/" + "Local Regions/" + imageNamesArray[2];
+		
+								//Now that we're certain we've got the optimal coordinates, we save our LR image
+								saveLRImage(lrSaveLoc);
+
+								//Here if we've already made the LR image, no need to remake it - just load it in
+								//Also, if we already have the optimal coordinate for that local region, save it in a table rather than
+								//recalculating
+								//Save optimal coordinates in the CP coordinate for substack table
 
 								otsu = getOtsuValue(avgProjImageLoc, xCoords[currCell], yCoords[currCell]);
 
 								print("Initial threshold value of " + otsu);
 
 								selectWindow("LR");
-								makePoint(LRLengthArray[0]/2, LRLengthArray[1]/2);
+								getDimensions(LRWidth, LRHeight, LRChannels, LRSlices, LRFrames);
+
+								makePoint(LRWidth/2, LRHeight/2);
 								initialTopValue = getValue("Max");
 								run("Select None");
 
 								initialThreshold = valueCheck(otsu, initialTopValue);
-
 								//Get a connected mask centered on the centre of the local region - as this is centered on our chosen cell coordinate
-								getConnectedMask(LRLengthArray[0]/2, LRLengthArray[1]/2, initialThreshold);
+								getConnectedMask(LRWidth/2, LRHeight/2, initialThreshold);
 
 								//Get the coordinates of the maxima in the local region
 								maximaCoordinates = findMaximaInCoords();
@@ -813,17 +825,10 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 								//Calculate this maxima coordinate in the original image
 								maximaCoordinatesInOriginal = newArray(2);
-								maximaCoordinatesInOriginal[0] = xCoords[currCell] + (maximaCoordinates[0] - (LRLengthArray[0]/2));
-								maximaCoordinatesInOriginal[1] = yCoords[currCell] + (maximaCoordinates[1] - (LRLengthArray[1]/2));
+								maximaCoordinatesInOriginal[0] = xCoords[currCell] + (maximaCoordinates[0] - (LRWidth/2));
+								maximaCoordinatesInOriginal[1] = yCoords[currCell] + (maximaCoordinates[1] - (LRHeight/2));
 
 								topValue = maximaCoordinates[2];
-
-								lrSaveLoc = directories[1] + imageNameRaw + "/" + "Local Regions/" + imageNamesArray[2];
-
-								waitForUser("Check LR image is ok");
-		
-								//Now that we're certain we've got the optimal coordinates, we save our LR image
-								saveLRImage(lrSaveLoc);
 
 								//Here we are finding the same connected regions using the maxima as our point selection and then measuring the area
 								//of the connected region to get an initial area size associated with the starting otsu value
@@ -933,10 +938,16 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 									saveGeneratedMask(maskSaveLoc);
 									maskSuccess[currCell] = 1;
 								}
+								
+								selectWindow("Connected");	
+								run("Close");
 
 								selectWindow("LR");
 								run("Close");
 							}
+
+							selectWindow(File.getName(avgProjImageLoc));
+							run("Close");
 
 							maskTry[currCell] = 1;
 

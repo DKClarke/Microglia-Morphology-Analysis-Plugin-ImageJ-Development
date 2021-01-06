@@ -1,263 +1,101 @@
-//////////////////////////Quality Control//////////////////////////////////////
-//If the user wants to perform quality control on the cells
-if(analysisSelections[4] == true) {
+//Get user input into where our working directory, and image storage directories, reside
+directories = getWorkingAndStorageDirectories();
+//[0] is input, [1] is output, [2] is done (working directories) [3] is directoryName (storage directory)
 
-	//Set the background color to black otherwise this messes with the clear outside command
-	setBackgroundColor(0,0,0);
+//Populate our image info arrays
+imagesToUseFile = directories[1] + "Images to Use.csv";
 
-	//Loop through our output images
-	loopThrough = getFileList(directories[1]);
+if(File.exists(imagesToUseFile) != 1) {
+	exit("Need to run the stack preprocessing and stack QA steps first");
+}
 
-	for(i=0; i<loopThrough.length; i++) {
+//If we already have a table get out our existing status indicators
+imageName = getTableColumn(imagesToUseFile, "Image Name");
 
-		//Make sure we're not working with non-image folders
-		proceed = false;
-		if(loopThrough[i] != "Images To Use.csv" && loopThrough[i] != "fracLac/") {
-			proceed = true;	
-			imageNames = newArray(4);
-			forUse = File.getName(loopThrough[i]) + ".tif";
-			getAnimalTimepointInfo(imageNames, forUse);	
-		}
+//This is an array with the strings that come just before the information we want to retrieve from the ini file.
+iniTextStringsPre = newArray("x.pixel.sz = ", "y.pixel.sz = ", "z.spacing = ", "no.of.planes = ", "frames.per.plane = ");
 
-		//If a TCS status file exists already
-		if(proceed== true && File.exists(directories[1] + imageNames[3] + "/TCS Status.csv")==1) {
+//Array to store the values we need to calibrate our image with
+iniValues =  getIniData(directories[3], iniTextStringsPre);
+//Index 0 is xPxlSz, then yPxlSz, zPxlSz, ZperT, FperZ
+
+////////////////////////////////////Automatic Microglial Segmentation///////////////////////////////////////////////////////////
+
+//This is the main body of iterative thresholding, we open processed input images and use the coordinates of the cell locations previuosly 
+//input to determine cell locations and create cell masks
+for (currImage=0; currImage<imageName.length; currImage++) {
+	
+	print("QA'ing masks generated for image ",File.getNameWithoutExtension(imageName[currImage]));
+
+	imageNameRaw = File.getNameWithoutExtension(imageName[currImage]);
+
+	statusTable = directories[1]+imageNameRaw+"/Cell Coordinate Masks/Cell Position Marking.csv";
+
+	if(File.exists(statusTable) != 1) {
+		exit("Run cell detection first");
+	}
+
+	substackNames = substacksToUse(statusTable, 'Substack', 'Processed', 'QC');
+
+	for(currSubstack = 0; currSubstack < substackNames.length; currSubstack++) {
+
+		print("Processing substack ", substackNames[currSubstack]);
+
+        tcsStatusTable = directories[1]+imageNameRaw+"/TCS Status Substack(" + substackNames[currSubstack] +").csv";
+        
+        if(File.exists(tcsStatusTable) != 1) {
+            exit("Run mask generation first");
+        }
+
+		tcsValue = getTableColumn(tcsStatusTable, "TCS");
+		tcsMasksGenerated = getTableColumn(tcsStatusTable, "Masks Generated");
+		tcsQCChecked = getTableColumn(tcsStatusTable, "QC Checked");
+		tcsAnalysed = getTableColumn(tcsStatusTable, "Analysed");
+
+		for(TCSLoops=0; TCSLoops<tcsValue.length; TCSLoops++) {
+
+			if(tcsMasksGenerated[TCSLoops] == 1 && tcsQCChecked[TCSLoops] == -1) {
+
+				print("QA'ing masks for TCS value of ", tcsValue[TCSLoops]);
+
+				//This is the directory for the current TCS
+				TCSDir=directories[1]+imageNameRaw+"/"+"TCS"+tcsValue[TCSLoops]+"/";
+				TCSMasks = TCSDir + "Cell Masks/";
+
+                cellMaskTable = TCSDir + "Substack (" + substackNames[currSubstack] + ") Mask Generation.csv";
+                
+                if(File.exists(cellMaskTable) != 1) {
+                    exit("Run mask generation first");
+                }
+
+				print("Retrieving mask generation status");
+
+				maskName = getTableColumn(cellMaskTable, "Mask Name");
+				maskTry = getTableColumn(cellMaskTable, "Mask Try");
+                maskSuccess = getTableColumn(cellMaskTable, "Mask Success");
+                
+                maskQA = getTableColumn(cellMaskTable, "Mask QA");
+
+				//We now loop through all the cells for this given input image
+				for(currCell=0; currCell<maskName.length; currCell++) {
+
+                    if(maskSuccess[currCell] == 1 && maskQA[currCell] == -1) {
 			
-			//Read it in and get whether we've QC'd all TCS vals
-			open(directories[1] + imageNames[3]+"/TCS Status.csv");
-			selectWindow("TCS Status.csv");
-			numberOfLoops = Table.size;
+                        print("QC for: ", maskName[currCell]);
+                        print("Cell no.: ", currCell+1, " / ", maskName.length);
 
-			print(imageNames[3]);
-			qcCol = Table.getColumn("QC Checked");
-			Array.getStatistics(qcCol, qcMin, qcMax, qcMean, qcSD);
-			selectWindow("TCS Status.csv");
-			Table.reset("TCS Status.csv");
-			
-			//If we haven't QC'd all the TCS levels for this datapoint (if we had, qcMean would be 1) then proceed
-			if(qcMean!=1) {
+                        cellMaskLoc = TCSDir + "Cell Masks/" + maskName[currCell];
+                        open(cellMaskLoc);
+                        selectWindow(File.getName(cellMaskLoc));
+                        run("Create Selection");
+                        getSelectionCoordinates(xpoints, ypoints);
 
-				print("Need to QC");
-				//Fill the TCS Status table with current TCS status values if they already exist
-			
-				TCSColumns = newArray("TCS", "Masks Generated", "QC Checked", "Analysed");
-				TCSValues = newArray(numberOfLoops*TCSColumns.length);
-				
-				//First numberOfLoops indices are TCS, then Masks Generated etc.
-				TCSResultsRefs = newArray(directories[1]+imageNames[3]+"/TCS Status.csv", 
-					directories[1]+imageNames[3]+"/TCS Status.csv", 
-					directories[1]+imageNames[3]+"/TCS Status.csv", 
-					directories[1]+imageNames[3]+"/TCS Status.csv");
-				TCSResultsAreStrings = newArray(false, false, false, false);
-			
-				fillArray(TCSValues, TCSResultsRefs, TCSColumns, TCSResultsAreStrings, true); 
-			
-				Table.create("TCS Status");
-				selectWindow("TCS Status");
-				for(i0=0; i0<numberOfLoops; i0++) {
-					for(i1=0; i1<TCSColumns.length; i1++) {
-						Table.set(TCSColumns[i1], i0, TCSValues[(numberOfLoops*i1)+i0]);
-					}
-				}
-				Table.update;
-		
-				//We QC all masks for all TCSs
-				for(TCSLoops=numberOfLoops-1; TCSLoops>=0; TCSLoops--) {
-					print("TCS " + TCSLoops);
-					
-					selectWindow("TCS Status");
-					currentLoopValues = newArray(TCSColumns.length);
-					//[0] is TCS, [1] is masks generated, [2] is QC checked, [3] is analysed
+                        substackCoordName = substring(maskName[currCell], indexOf(maskName[currCell], 'for'));
 
-					currentLoopValues[0] = Table.get("TCS", TCSLoops);
-
-					//Booleans for whether we have TCS values preceding or following this one
-					prevExists = false;
-					nextExists = false;
-
-					selectWindow("TCS Status");
-					for(i0 = 0; i0<Table.size; i0++) {
-						if(currentLoopValues[0] == Table.get("TCS", i0)) {
-							
-							selectWindow("TCS Status");
-							//Here we fill our currentLoopValues table with the TCSValues data that corresponds to the TCS value
-							//we're current processing - this will be a bunch of zeros if we haven't processed anything before
-							for(i1=0; i1<TCSColumns.length; i1++) {
-								currentLoopValues[i1] = Table.get(TCSColumns[i1], i0);
-							}
-
-							//If we're not on the first one, if we have a directory for the previous TCS get out the kept 
-							//and names columns from it
-							if(i0 > 0) {
-								previousTCSDir=directories[1]+imageNames[3]+"/TCS"+Table.get("TCS", (i0-1))+"/QC Checked.csv";
-								selectWindow("TCS Status");
-								if(File.exists(previousTCSDir) && Table.get("QC Checked", (i0-1)) == 1) {
-									prevExists = true;
-									open(previousTCSDir);
-									selectWindow("QC Checked.csv");
-									keptPrevTCS=Table.getColumn("Keep");
-									namesPrevTCS=Table.getColumn("Mask Name");
-									Table.reset("QC Checked.csv");
-								}
-							}
-
-							//If we're not on the last one get out which masks we we kept from the next TCS
-							if(i0 < Table.size-1) {
-								nextTCSDir=directories[1]+imageNames[3]+"/TCS"+Table.get("TCS", (i0+1))+"/QC Checked.csv";
-								selectWindow("TCS Status");
-								if(File.exists(nextTCSDir) && Table.get("QC Checked", (i0+1)) == 1) {
-									nextExists = true;
-									open(nextTCSDir);
-									selectWindow("QC Checked.csv");
-									keptNextTCS=Table.getColumn("Keep");
-									namesNextTCS=Table.getColumn("Mask Name");
-									Table.reset("QC Checked.csv");
-								}
-							}
-							i0 = Table.size;
-						}
-					}
-			
-					//If the QC for this TCS hasn't been done in its entirety..
-					if(currentLoopValues[2]==0) {
-
-						//Get the paths for our storage folders
-						TCSDir=directories[1]+imageNames[3]+"/"+"TCS"+currentLoopValues[0]+"/";
-						storageFoldersArray=newArray(storageFolders.length);
-						//[2] is somas, [3] is maskDir, [4] is localregion
-						
-						for(i0=0; i0<storageFolders.length; i0++) {
-							if(i0<3) {
-								parentDir=directories[1]+imageNames[3]+"/";	
-							} else {
-								parentDir=TCSDir;	
-							}
-							storageFoldersArray[i0]=parentDir+storageFolders[i0];
-						}
-		
-						//Our maskName array is just a list of the files in our maskDirFiles folder
-						//Fill QC checked with preivous results if they exist
-						maskDirFiles = getFileList(storageFoldersArray[3]);
-
-						//Get out our cell check, keep, and traced values for each cell
-						valuesToRecord = newArray("Single Cell Check", "Keep", "Traced"); 
-						analysisRecordInput = newArray(maskDirFiles.length*valuesToRecord.length);
-						resultsTableRefs = newArray(TCSDir+"QC Checked.csv", TCSDir+"QC Checked.csv", TCSDir+"QC Checked.csv");
-						resultsAreStrings = newArray(false, false, false);
-						fillArray(analysisRecordInput, resultsTableRefs, valuesToRecord, resultsAreStrings, true);
-
-						//Add on our mask names to this fetched array
-						maskName=Array.copy(maskDirFiles);
-						analysisRecordInput = Array.concat(maskName, analysisRecordInput);
-						toAdd = newArray("Mask Name");
-						tableLabels = Array.concat(toAdd, valuesToRecord);
-
-						//Repopulate the table if it hasn't already been done
-						Table.create("QC Checked");
-						selectWindow("QC Checked");
-
-						for(i0=0; i0<maskDirFiles.length; i0++) {
-			
-							currentMaskValues = newArray(4);
-							//[0] is mask name, [1] is single cell check, [2] is keep, [3] is trace
-					
-							for(i1=0; i1<currentMaskValues.length; i1++) {
-								currentMaskValues[i1] = analysisRecordInput[(maskDirFiles.length*i1)+i0];
-							}
-							
-							//Here we get out the values for whether the images have been checked for overall issues (singleChecked),
-							//Whether we decided to keep the image (keepImage), and whether (if the user wants to trace the cells), the cells
-							//have been traced
-			
-							cutName = substring(maskDirFiles[i0], indexOf(maskDirFiles[i0], "Substack"));
-							imageNamesArray = newArray("Local region for " +cutName, "Candidate Soma Mask for " + cutName);
-
-							//Get the x, y, and substack location of the current cell
-							print(maskName[i0]);
-							xCoord = parseInt(substring(maskName[i0], indexOf(maskName[i0], "x ")+2, indexOf(maskName[i0], "y")-1));
-							yCoord = parseInt(substring(maskName[i0], indexOf(maskName[i0], "y ")+2, indexOf(maskName[i0], ".tif")-1));
-							substackLoc = substring(maskName[i0], 0, indexOf(maskName[i0], "x"));
-							print(xCoord);
-							print(yCoord);
-			
-							//Here, we look for the kept value of the current coordinates in the previous TCS directory
-							//if it was kept previously, set keptPrevTCS to 1, otherwise to 0
-							currentKeptPrev = 0;
-							currentCheckPrev = 0;
-							currentKeptNext = 0;
-							currentCheckNext = 0;
-							somaName = storageFoldersArray[2]+imageNamesArray[1];
-							otherSomaName = storageFoldersArray[2]+imageNamesArray[1];
-
-							//If we have a previous TCS
-							if(prevExists == true) {
-								returnArray = newArray(3);
-								outputArray = checkForSameCell(namesPrevTCS, maskName[i0], keptPrevTCS, currentKeptPrev, currentCheckPrev, xCoord, yCoord, substackLoc, storageFoldersArray[2], returnArray);
-								currentKeptPrev = outputArray[0];
-								currentCheckPrev = outputArray[1];
-								otherSomaName = outputArray[2];
-							}
-
-							//Same deal for if we have a subsequent TCS
-							if(nextExists == true) {
-								returnArray = newArray(3);
-								outputArray = checkForSameCell(namesNextTCS, maskName[i0], keptNextTCS, currentKeptNext, currentCheckNext, xCoord, yCoord, substackLoc, storageFoldersArray[2], returnArray);
-								currentKeptNext = outputArray[0];
-								currentCheckNext = outputArray[1];
-								otherSomaName = outputArray[2];
-							}
-							
-							checkMask = false;
-							pass = false;
-							fail = false;
-
-							if(currentMaskValues[1] == 0 && currentCheckNext == 1 && currentKeptNext == 1) {
-								checkMask = false;
-								print("Checked and passed higher TCS value, no need to check lower");
-								pass = true;
-							} else if (currentMaskValues[1] == 0 && currentCheckNext == 1 && currentKeptNext == 0) {
-								checkMask = true;
-								print("Checked and failed higher TCS value, need to check lower");
-							} else if(currentMaskValues[1] == 0 && currentCheckNext == 0) {
-								checkMask = true;
-								print("Haven't checked at a higher TCS, need to check at this level");
-							} 
-							
-							if (currentMaskValues[1] == 0 && currentCheckPrev == 1 && currentKeptPrev == 0) {
-								checkMask = false;
-								print("Checked and failed at a lower TCS value, no need to check higher");
-								fail = true;
-							}
-
-							//If we're tracing processes and we haven't traced the mask and it wasn't disregarded before
-							if(selection[4] == 1 && currentMaskValues[3] == 0 && fail!= true) {
-								checkMask = true;
-								print("Need to trace");
-							}
-
-							//If we're not checking because we don't need to because it'll pass, set kept to 1
-							if(pass == true) {
-								currentMaskValues[2]=1;
-							}
-							//If we're not checking because it will fail, set kept to 0
-							if(fail == true) {
-								currentMaskValues[2]=0;
-							}
-
-							//If we need to QC our mask
-							if(checkMask == true) {
-			
-								print("QC for: ", maskDirFiles[i0]);
-								print("Cell no.: ", i0, " / ", maskDirFiles.length);
-			
-								open(storageFoldersArray[3]+maskDirFiles[i0]);
-								currentMask = getTitle();
-								tifLess = substring(currentMask, 0, indexOf(currentMask, ".tif"));
-								run("Select None");
-								run("Auto Threshold", "method=Default");
-								
-								open(storageFoldersArray[4]+imageNamesArray[0]);
-								LRImage = getTitle();
-								LRTifLess = substring(LRImage, 0, indexOf(LRImage, ".tif"));
+                        cellLRLoc = directories[1]+imageNameRaw+"/Local Regions/" + "Local region " + substackCoordName;
+                        open(cellLRLoc);
+                        selectWindow(File.getName(cellLRLoc));
+                        makeSelection('freehand', xpoints, ypoints);
 				
 								//Here we open the local regions, outline the mask, and ask the user whether to keep the image or not
 								if(currentMaskValues[1]==0) {

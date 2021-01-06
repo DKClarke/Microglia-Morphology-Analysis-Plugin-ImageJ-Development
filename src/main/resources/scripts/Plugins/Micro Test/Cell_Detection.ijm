@@ -178,6 +178,7 @@ function fillAndSaveSubstackCoordinatesTable(currentMaskGen, newX, newY, directo
 		Table.setColumn("Y", -1);
 		Table.setColumn("xOpt", -1);
 		Table.setColumn("yOpt", -1);
+		Table.setColumn("Optimal Threshold", -1);)
 
 	} else {
 		Table.setColumn("X", newX);
@@ -190,6 +191,10 @@ function fillAndSaveSubstackCoordinatesTable(currentMaskGen, newX, newY, directo
 
 		Table.setColumn("xOpt", xOpt);
 		Table.setColumn("yOpt", yOpt);
+
+		optimalThreshold = Array.copy(newY);
+		Array.fill(optimalThreshold, -1);
+		Table.setColumn("Optimal Threshold", optimalThreshold);
 
 	}
 
@@ -362,6 +367,10 @@ function addSelectedCoordinateStoExisting(tableLoc) {
 
 	Table.setColumn("xOpt", xOpt);
 	Table.setColumn("yOpt", yOpt);
+
+	optimalThreshold = Array.copy(newX);
+	Array.fill(optimalThreshold, -1);
+	Table.setColumn("Optimal Threshold", optimalThreshold);
 
 	Table.save(tableLoc);
 	toClose = Table.title();

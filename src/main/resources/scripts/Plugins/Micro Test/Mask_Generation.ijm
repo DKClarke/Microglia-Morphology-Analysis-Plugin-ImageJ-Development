@@ -768,6 +768,117 @@ function findOrRetrieveOptimalCoordinates(avgProjImageLoc, LRCoords, xCoords, yC
 
 }
 
+function getSubstacksToUse(directories, imageNameRaw) {
+		
+	statusTable = directories[1]+imageNameRaw+"/Cell Coordinate Masks/Cell Position Marking.csv";
+	if(File.exists(statusTable) != 1) {
+		exit("Run cell detection first");
+	}
+
+	substackNames = substacksToUse(statusTable, 'Substack', 'Processed', 'QC');
+
+	return substackNames;
+}
+
+function populateTCSValueArray(tcsValue, numberOfLoops, selection) {
+
+	if(tcsValue[0] == -1) {
+
+		print("Not previously attempted mask generation for this substack");
+
+		for(TCSLoops=0; TCSLoops<numberOfLoops; TCSLoops++) {
+			tcsValue[TCSLoops] = selection[0]+(selection[3]*TCSLoops);
+		}
+	}
+
+	return tcsValue;
+
+}
+
+function iterativeThresholding(nextIteration, initialThreshold, firstArea, tcsValue, TCSLoops, topValue, lrCoordinateValues) {
+
+	//These variables are changed depending on how many iterations a mask has stabilised for (regardless of whether it fits
+	// the TCS +/- the range, as if it stabilized 3 times we keep it), and loopcount ticks up each iteration we go through
+	//as we use this value to change the otsu we use for the subsequent iteration 
+	stabilisedCount = 0;
+	loopCount = 0;
+
+	//Here if we are proceeding with the iterative thresholding
+	while (nextIteration==1) {
+
+		print("Mask doesn't meet stopping requirements, continuing to iterate");
+
+		selectWindow("Connected");
+		run("Close");
+
+		loopCount++; //Each iteration we increase loopCount, this modifies how we alter the threshold value
+
+		//This variable stores the next threshold value we'll use based on a formula outlined later
+		if(loopCount == 1) {
+			t1 = initialThreshold;
+			a1 = firstArea;
+		} else {
+			t1 = nextThreshold;
+			a1 = areaNew;
+		}
+
+		ms = tcsValue[TCSLoops];
+		n = loopCount;
+		
+		print("Calculating next threshold value to use");
+
+		nextThresholdRaw = calculateNextThreshold(t1, a1, ms, n);
+
+		print("Next thresholdRaw is ", nextThresholdRaw);
+
+		//print("nextThresh: ", otsuVariables[1]);
+		//print("otsuNorm: ", otsu/255);
+		//print("area: ", area);
+		//print("TCS: ", currentLoopValues[0]);
+		//print("Loop count: ", maskGenerationVariables[1]);
+				
+		//Check if our next threshold is higher than the maximum pixel value in the image - if so, set to
+		//maximal pixel value
+		nextThreshold = valueCheck(nextThresholdRaw, topValue);
+
+		//Here we get another area from our find connected regions
+		//print("otsu to check: ", otsuVariables[1]);
+		//print("bottom value: ", bottomValue);
+		//print("top value: ", topValue);
+		print("Threshold value of " + nextThreshold);
+		areaNew = getCurrentMaskArea(lrCoordinateValues[0], lrCoordinateValues[1], nextThreshold);
+
+		print("Mask area is = "+areaNew+"um^2");
+		print("Previous area was ", a1);
+		
+		//If we get the same area for 3 iterations we exit the iterative process, so here we count identical areas 
+		//(but if for any one instance they are not identical, we rest the counter)
+		if (areaNew==a1){
+			print("Areas are the same");
+			stabilisedCount++;
+			print(stabilisedCount);
+		} else {
+			print("Areas are not the same");
+			stabilisedCount=0;	
+		}
+
+		if(stabilisedCount == 3) {
+			stabilised = true;
+			print("Mask area has stabilised");
+		}
+
+		//Here, as before, we look at which condition the mask falls into and act appropriately to either continue iterating, 
+		//save the mask, or discard the mask
+		touching = tooCloseToEdge("Connected", fiveMicronsInPixels);
+		nextIteration = getMaskStatus(areaNew, tcsValue[TCSLoops], selection[2], touching, stabilised);
+
+	} //Once the output of threshContinue==false, then we exit the process
+
+	return nextIteration;
+
+}
+
+
 setBatchMode(true);
 
 //Get user input into where our working directory, and image storage directories, reside
@@ -815,16 +926,12 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 	imageNameRaw = File.getNameWithoutExtension(imageName[currImage]);
 
-	statusTable = directories[1]+imageNameRaw+"/Cell Coordinate Masks/Cell Position Marking.csv";
 	LRDir = directories[1] + imageNameRaw + "/" + "Local Regions/";
 	makeDirectories(newArray(LRDir));
 
-	if(File.exists(statusTable) != 1) {
-		exit("Run cell detection first");
-	}
+	substackNames = getSubstacksToUse(directories, imageNameRaw);
 
-	substackNames = substacksToUse(statusTable, 'Substack', 'Processed', 'QC');
-
+	//Loop through substacks that are ready to have masks generated for them
 	for(currSubstack = 0; currSubstack < substackNames.length; currSubstack++) {
 
 		print("Processing substack ", substackNames[currSubstack]);
@@ -836,17 +943,12 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 		tcsQCChecked = getOrCreateTableColumn(tcsStatusTable, "QC Checked", -1, numberOfLoops);
 		tcsAnalysed = getOrCreateTableColumn(tcsStatusTable, "Analysed", -1, numberOfLoops);
 
-		if(tcsValue[0] == -1) {
+		tcsValue = populateTCSValueArray(tcsValue, numberOfLoops, selection)
 
-			print("Not previously attempted mask generation for this substack");
-
-			for(TCSLoops=0; TCSLoops<numberOfLoops; TCSLoops++) {
-				tcsValue[TCSLoops] = selection[0]+(selection[3]*TCSLoops);
-			}
-		}
-
+		//Loop through each TCS value the user has specified
 		for(TCSLoops=0; TCSLoops<tcsValue.length; TCSLoops++) {
 
+			//If we haven't generated all the masks for the current TCS value
 			if(tcsMasksGenerated[TCSLoops] == -1) {
 
 				print("Processing TCS value of ", tcsValue[TCSLoops]);
@@ -854,9 +956,9 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 				//This is the directory for the current TCS
 				TCSDir=directories[1]+imageNameRaw+"/"+"TCS"+tcsValue[TCSLoops]+"/";
 				TCSMasks = TCSDir + "Cell Masks/";
-
 				makeDirectories(newArray(TCSDir, TCSMasks));
 
+				//Retrieve the cell coordinates for the current substack
 				print("Retrieving cell coordinates");
 
 				substackFileSuffix = "Substack (" + substackNames[currSubstack] + ")";
@@ -870,6 +972,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 				cellMaskTable = TCSDir + "Substack (" + substackNames[currSubstack] + ") Mask Generation.csv";
 
+				//Retrieving the status of each mask we need to generate for the current substack (and TCS)
 				print("Retrieving mask generation status");
 
 				maskName = getOrCreateTableColumn(cellMaskTable, "Mask Name", -1, xCoords.length);
@@ -886,7 +989,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 				prevTCSCellMaskTable = prevTCSDir + "Substack (" + substackNames[currSubstack] + ") Mask Generation.csv";
 				prevMaskSuccess = getOrCreateTableColumn(prevTCSCellMaskTable, "Mask Success", 1, xCoords.length);
 
-				//We now loop through all the cells for this given input image
+				//We now loop through all the cells for this substack and TCS value
 				for(currCell=0; currCell<xCoords.length; currCell++) {
 
 					imageNamesArray = makeImageNamesArray(directories, imageNameRaw, substackNames[currSubstack], xCoords[currCell], yCoords[currCell]);
@@ -894,10 +997,8 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 					maskName[currCell] = File.getName(imageNamesArray[0]);
 				
-					//If the current mask hasn't been tried, and making the mask previously was a success then we try to make a mask - the reason we check previously
-					//is because our TCS sizes increase with each loop, so if we couldn't make a mask on a previous loop where the TCS was smaller, that means the mask 
-					//must have been touching the edges of the image, so with a larger TCS, then we're guaranteed that the mask will touch the edges so we don't bother
-					//trying to make a mask for it anymore
+					//If we haven't tried to make a mask for this image, and it didn't fail at a smaller TCS value (if it failed at a previous value, it
+					//won't succeed at a higher one) then we proceed with mask generation
 					if(maskTry[currCell]==-1 && prevMaskSuccess[currCell]==1) {
 
 						print("Generating mask for ", maskName[currCell]);
@@ -909,7 +1010,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 						//Here we work out the number of pixels that represent 5 microns so we can use this to calculate if the coordinates are within the 5um buffer zone
 						//of the edge of the image
 						fiveMicronsInPixels=5*(1/iniValues[0]);
-
+						
 						avgProjImageLoc = directories[1]+imageNameRaw+"/Cell Coordinate Masks/CP mask for " + substackFileSuffix + ".tif";
 						openAndCalibrateAvgProjImage(avgProjImageLoc, iniValues);
 						proceed = coordinatesWithinBuffer(avgProjImageLoc, xCoords[currCell], yCoords[currCell], fiveMicronsInPixels);	
@@ -917,6 +1018,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 						//If the y coordinate isn't less than 5 microns from the bottom or top edges of the image, and the x coordinate isn't less than 5 pixels from the width, then we
 						//proceed
 
+						//If the coordinates for the mask are far enough from the edge of the image, proceed
 						if(proceed == true){
 
 							print("Base coordinates are far enough from the edges of the image to proceed");
@@ -931,8 +1033,10 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 							LRCoords = getLRCoords(avgProjImageLoc, newArray(xCoords[currCell], yCoords[currCell]), LRLengthPixels);
 
+							//Either make or read in a previously made local region image centered on the coordinates
 							makeOrRetrieveLR(lrSaveLoc, LRCoords, LRLengthPixels, avgProjImageLoc);	
 
+							//Adjust the coordinates so that they sit on the maxima of the cell in the local region
 							lrCoordinateValues = findOrRetrieveOptimalCoordinates(avgProjImageLoc, LRCoords, xCoords, yCoords, xOpt, yOpt, optimalThreshold, currCell, substackCoordinatesLoc);
 							
 							initialThreshold = lrCoordinateValues[2];
@@ -956,84 +1060,8 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 							//If 1, then we keep iterating
 							stabilised = false;
 							nextIteration = getMaskStatus(firstArea, tcsValue[TCSLoops], selection[2], touching, stabilised);
-
-							//These variables are changed depending on how many iterations a mask has stabilised for (regardless of whether it fits
-							// the TCS +/- the range, as if it stabilized 3 times we keep it), and loopcount ticks up each iteration we go through
-							//as we use this value to change the otsu we use for the subsequent iteration 
-							stabilisedCount = 0;
-							loopCount = 0;
-	
-							//Here if we are proceeding with the iterative thresholding
-							while (nextIteration==1) {
-
-								print("Mask doesn't meet stopping requirements, continuing to iterate");
-
-								selectWindow("Connected");
-								run("Close");
-				
-								loopCount++; //Each iteration we increase loopCount, this modifies how we alter the threshold value
-	
-								//This variable stores the next threshold value we'll use based on a formula outlined later
-								if(loopCount == 1) {
-									t1 = initialThreshold;
-									a1 = firstArea;
-								} else {
-									t1 = nextThreshold;
-									a1 = areaNew;
-								}
-
-								ms = tcsValue[TCSLoops];
-								n = loopCount;
-								
-								print("Calculating next threshold value to use");
-
-								nextThresholdRaw = calculateNextThreshold(t1, a1, ms, n);
-
-								print("Next thresholdRaw is ", nextThresholdRaw);
-
-								//print("nextThresh: ", otsuVariables[1]);
-								//print("otsuNorm: ", otsu/255);
-								//print("area: ", area);
-								//print("TCS: ", currentLoopValues[0]);
-								//print("Loop count: ", maskGenerationVariables[1]);
-										
-								//Check if our next threshold is higher than the maximum pixel value in the image - if so, set to
-								//maximal pixel value
-								nextThreshold = valueCheck(nextThresholdRaw, topValue);
-			
-								//Here we get another area from our find connected regions
-								//print("otsu to check: ", otsuVariables[1]);
-								//print("bottom value: ", bottomValue);
-								//print("top value: ", topValue);
-								print("Threshold value of " + nextThreshold);
-								areaNew = getCurrentMaskArea(lrCoordinateValues[0], lrCoordinateValues[1], nextThreshold);
-
-								print("Mask area is = "+areaNew+"um^2");
-								print("Previous area was ", a1);
-								
-				
-								//If we get the same area for 3 iterations we exit the iterative process, so here we count identical areas 
-								//(but if for any one instance they are not identical, we rest the counter)
-								if (areaNew==a1){
-									print("Areas are the same");
-									stabilisedCount++;
-									print(stabilisedCount);
-								} else {
-									print("Areas are not the same");
-									stabilisedCount=0;	
-								}
-
-								if(stabilisedCount == 3) {
-									stabilised = true;
-									print("Mask area has stabilised");
-								}
-	
-								//Here, as before, we look at which condition the mask falls into and act appropriately to either continue iterating, 
-								//save the mask, or discard the mask
-								touching = tooCloseToEdge("Connected", fiveMicronsInPixels);
-								nextIteration = getMaskStatus(areaNew, tcsValue[TCSLoops], selection[2], touching, stabilised);
-	
-							} //Once the output of threshContinue==false, then we exit the process
+							
+							nextIteration = iterativeThresholding(nextIteration, initialThreshold, firstArea, tcsValue, TCSLoops, topValue, lrCoordinateValues);
 
 							//If the mask has passed, save it
 							if(nextIteration == 0) {

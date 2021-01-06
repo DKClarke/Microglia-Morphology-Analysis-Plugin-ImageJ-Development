@@ -150,11 +150,11 @@ function getOtsuValue(avgProjImageLoc, xCoord, yCoord) {
 
 	//We then auto threshold the LR and then get the lower and upper threshold levels from the otsu method and call the lower threshold
 	//otsu
+	print("Getting starting otsu thresholding value");
 	selectWindow("LR");
 	setAutoThreshold("Otsu dark");
 	selectWindow("LR");
 	getThreshold(otsu, upper);
-	print("Finding connected pixels from CP using threshold");
 
 	//We get the grey value at that point selection, and then if the lower threshold of the image
 	//is bigger than that value, we set it to that value
@@ -171,6 +171,7 @@ function getOtsuValue(avgProjImageLoc, xCoord, yCoord) {
 function getConnectedMask(xCoord, yCoord, thresholdVal) {
 
 	//We then make the point on our image and find all connected pixels to that point that have grey values greater than the otsu value
+	print("Finding mask connected to our coordinates ", xCoord, yCoord, " at our threshold ", thresholdVal);
 	selectWindow("LR");
 	makePoint(xCoord, yCoord);
 	setBackgroundColor(0,0,0);
@@ -183,6 +184,7 @@ function getConnectedMask(xCoord, yCoord, thresholdVal) {
 
 function findMaximaInCoords() {
 
+	print("Finding the local maxima in our Connected image");
 	selectWindow("Connected");
 	run("Create Selection");
 	getSelectionCoordinates(xpoints, ypoints);
@@ -194,7 +196,6 @@ function findMaximaInCoords() {
 	//to ensure that our point selection isn't on a local minima, which whould make finding connected pixels that are 
 	//actually from our target cell very error-prone
 	
-	print("Fine-tuning CP point selection based on mask");
 	selectWindow("LR");
 	run("Duplicate...", " ");
 	selectWindow("LR-1");
@@ -231,6 +232,8 @@ function saveLRImage(lrSaveLoc) {
 
 function getCurrentMaskArea(xCoord, yCoord, threshold) {
 
+	print("Getting area associated with our current mask");
+
 	//Here we are finding the same connected regions using the maxima as our point selection and then measuring the area
 	//of the connected region to get an initial area size associated with the starting otsu value
 	getConnectedMask(xCoord, yCoord, threshold);
@@ -248,6 +251,7 @@ function tooCloseToEdge(imageName, bufferSize) {
 
 	//Takes the mask of the cell and turns it into its bounding quadrilateral, 
 	//then gets an array of all the coordinates of that quadrilateral
+	print("Calculating if our selection is too close to the edge of our image");
 	selectWindow(imageName);
 	getDimensions(functionWidth, functionHeight, functionChannels, functionSlices, functionFrames);
 	run("Create Selection");
@@ -270,6 +274,8 @@ function tooCloseToEdge(imageName, bufferSize) {
 
 function getMaskStatus(area, currentTCS, TCSRange, touching, stabilised) {
 
+	print("Calculating if we should proceed with iterative thresholding for mask generation");
+
 	//limits is an array to store the lower and upper limits of the cell area we're using within this TCS loop, calculated
 	//according to the error the user input
 	limits = newArray(currentTCS-TCSRange, currentTCS+TCSRange);
@@ -279,6 +285,8 @@ function getMaskStatus(area, currentTCS, TCSRange, touching, stabilised) {
 	nextIteration = 0;
 
 	if (area<limits[0]) {
+
+		print("Selection area is below our lower TCS limit");
 
 		//If we're checking for touching below the area limits or once the image 
 		//has stabilized, touching means we disregard this cell and so we set 
@@ -291,6 +299,8 @@ function getMaskStatus(area, currentTCS, TCSRange, touching, stabilised) {
 	
 	//If its within our limits, we check if its touching edges, and if it isn't touching any edges we save it, else we keep going
 	} else if (area<=limits[1] && area>=limits[0]) {
+
+		print("Selection area is within our TCS limits");
 
 		//If we're checking for touching below the area limits or once the image 
 		//has stabilized, touching means we disregard this cell and so we set 
@@ -316,6 +326,8 @@ function getMaskStatus(area, currentTCS, TCSRange, touching, stabilised) {
 
 	//If we're above the limits, we continue iterating
 	} else if (area>limits[1]) {
+
+		print("Selection area is above our upper TCS limit");
 
 		if(stabilised == true) {
 			nextIteration = -1;
@@ -345,7 +357,10 @@ function saveGeneratedMask(saveLoc) {
 function valueCheck(inputValue, topLimit) {
 	
 	if(inputValue>=topLimit) {
+		print("Value is above our limit, setting to our limit - 1");
 		inputValue = topLimit-1;
+	} else {
+		print("Value is within our limits");
 	}
 
 	//We want a rounded threshold value since the images are in 8-bit, so we do 
@@ -365,6 +380,8 @@ function calculateNextThreshold(t1, a1, ms, n) {
 }
 
 function substacksToUse(substackTableLoc, nameCol, processedCol, QCCol) {
+
+	print("Retrieving the substacks that are ready for mask generation");
 
 	//We return an array of substack names to use if they have been processed an QAs
 	substackNames = getTableColumn(substackTableLoc, nameCol);
@@ -496,6 +513,8 @@ function listFilesAndFilesSubDirectories(directoryName, subString) {
 
 function getTableColumn(fileLoc, colName) {
 
+	print("Retrieving the column ", colName, " from the table ", File.getName(fileLoc));
+
 	open(fileLoc);
 	tableName = Table.title;
 	selectWindow(tableName);
@@ -549,6 +568,8 @@ function findFileWithFormat(folder, fileFormat) {
 //entire experiment that we use to calibrate our images. iniFolder is the folder within which the ini file is located, 
 //and iniValues is an array we pass into the function that we fill with calibration values before returning it	
 function getIniData(iniFolder, iniStrings) {
+
+	print("Retrieving .ini data");
 
 	//Find our ini file
 	iniLocations = findFileWithFormat(iniFolder, "ini");
@@ -605,6 +626,7 @@ function getOrCreateTableColumn(tableLoc, columnName, defaultValue, defaultLengt
 	if(File.exists(tableLoc) == 1) {
 		outputArray = getTableColumn(tableLoc, columnName);
 	} else {
+		print("Table doesn't exist; creating array with default value of default length");
 		outputArray = newArray(defaultLength);
 		Array.fill(outputArray, defaultValue);
 	}
@@ -627,7 +649,10 @@ function makeDirectories(directories) {
     }
 }
 
-function saveSubstackCoordinatesLocTable(xCoords, yCoords, xOpt, yOpt, saveLoc) {
+function saveSubstackCoordinatesLocTable(xCoords, yCoords, xOpt, yOpt, optimalThreshold, saveLoc) {
+
+	print("Updating and saving our ", File.getName(saveLoc), " table");
+
 	//Save these arrays into a table
 	Table.create(File.getName(saveLoc));
 	selectWindow(File.getName(saveLoc));
@@ -635,6 +660,7 @@ function saveSubstackCoordinatesLocTable(xCoords, yCoords, xOpt, yOpt, saveLoc) 
 	Table.setColumn("Y", yCoords);
 	Table.setColumn("xOpt", xOpt);
 	Table.setColumn("yOpt", yOpt);
+	Table.setColumn("Optimal Threshold", optimalThreshold);
 	Table.save(saveLoc);
 	selectWindow(File.getName(saveLoc));
 	run("Close");
@@ -645,6 +671,9 @@ function makeOrRetrieveLR(lrSaveLoc, xCoord, yCoord, LRLengthPixels, avgProjImag
 
 	//If we already have made a LR image, retrieve it
 	if(File.exists(lrSaveLoc) == 1) {
+
+		print("Loading in already created local region image");
+		
 		open(lrSaveLoc);
 		selectWindow(File.getName(lrSaveLoc));
 		rename("LR");
@@ -668,10 +697,12 @@ function makeOrRetrieveLR(lrSaveLoc, xCoord, yCoord, LRLengthPixels, avgProjImag
 
 }
 
-function findOrRetrieveOptimalCoordinates(avgProjImageLoc, xCoords, yCoords, xOpt, yOpt, currCell, substackCoordinatesLoc) {
+function findOrRetrieveOptimalCoordinates(avgProjImageLoc, xCoords, yCoords, xOpt, yOpt, optimalThreshold, currCell, substackCoordinatesLoc) {
 
 	//If we don't have any optimised cell coordinates yet for this cell, find them
 	if(xOpt[currCell] == -1) {
+
+		print("Generating optimal coordinates for mask generation");
 
 		//Here if we've already made the LR image, no need to remake it - just load it in
 		//Also, if we already have the optimal coordinate for that local region, save it in a table rather than
@@ -698,17 +729,22 @@ function findOrRetrieveOptimalCoordinates(avgProjImageLoc, xCoords, yCoords, xOp
 		xOpt[currCell] = maximaCoordinates[0];
 		yOpt[currCell] = maximaCoordinates[1];
 
-		saveSubstackCoordinatesLocTable(xCoords, yCoords, xOpt, yOpt, substackCoordinatesLoc);
+		optimalThreshold[currCell] = valueCheck(initialThreshold, maximaCoordinates[2]);
+		maximaCoordinates[2] = optimalThreshold[currCell];
+
+		saveSubstackCoordinatesLocTable(xCoords, yCoords, xOpt, yOpt, optimalThreshold, substackCoordinatesLoc);
 	
 	//Else, store them
 	} else {
+
+		print("Using existing optimal coordinates for mask generation");
 
 		selectWindow("LR");
 		run("Select None");
 		makePoint(xOpt[currCell], yOpt[currCell]);
 		topValue = getValue("Max");
 		run("Select None");
-		maximaCoordinates = newArray(xOpt[currCell], yOpt[currCell], topValue);
+		maximaCoordinates = newArray(xOpt[currCell], yOpt[currCell], optimalThreshold[currCell]);
 
 	}
 
@@ -758,7 +794,9 @@ iniValues =  getIniData(directories[3], iniTextStringsPre);
 
 //This is the main body of iterative thresholding, we open processed input images and use the coordinates of the cell locations previuosly 
 //input to determine cell locations and create cell masks
-for (currImage=0; currImage<imageName.length; currImage++) {	
+for (currImage=0; currImage<imageName.length; currImage++) {
+	
+		print("Processing image ",File.getNameWithoutExtension(imageName[currImage]));
 
 		imageNameRaw = File.getNameWithoutExtension(imageName[currImage]);
 
@@ -772,6 +810,8 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 		for(currSubstack = 0; currSubstack < substackNames.length; currSubstack++) {
 
+			print("Processing substack ", substackNames[currSubstack]);
+
 			tcsStatusTable = directories[1]+imageNameRaw+"/TCS Status Substack(" + substackNames[currSubstack] +").csv";
 
 			tcsValue = getOrCreateTableColumn(tcsStatusTable, "TCS", -1, numberOfLoops);
@@ -780,6 +820,9 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 			tcsAnalysed = getOrCreateTableColumn(tcsStatusTable, "Analysed", -1, numberOfLoops);
 
 			if(tcsValue[0] == -1) {
+
+				print("Not previously attempted mask generation for this substack");
+
 				for(TCSLoops=0; TCSLoops<numberOfLoops; TCSLoops++) {
 					tcsValue[TCSLoops] = selection[0]+(selection[3]*TCSLoops);
 				}
@@ -789,11 +832,15 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 				if(tcsMasksGenerated[TCSLoops] == -1) {
 
+					print("Processing TCS value of ", tcsValue[TCSLoops]);
+
 					//This is the directory for the current TCS
 					TCSDir=directories[1]+imageNameRaw+"/"+"TCS"+tcsValue[TCSLoops]+"/";
 					TCSMasks = TCSDir + "Cell Masks/";
 
 					makeDirectories(newArray(TCSDir, TCSMasks));
+
+					print("Retrieving cell coordinates");
 
 					substackFileSuffix = "Substack (" + substackNames[currSubstack] + ")";
 					substackCoordinatesLoc = directories[1] + imageNameRaw + "/Cell Coordinates/" + "CP Coordinates for " + substackFileSuffix + ".csv";
@@ -802,14 +849,18 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 					yCoords = getTableColumn(substackCoordinatesLoc, 'Y');
 					xOpt = getOrCreateTableColumn(substackCoordinatesLoc, "xOpt", -1, xCoords.length);
 					yOpt = getOrCreateTableColumn(substackCoordinatesLoc, "yOpt", -1, xCoords.length);
+					optimalThreshold = getOrCreateTableColumn(substackCoordinatesLoc, "Optimal Threshold", -1, xCoords.length);
 
 					cellMaskTable = TCSDir + "Mask Generation.csv";
+
+					print("Retrieving mask generation status");
 
 					maskName = getOrCreateTableColumn(cellMaskTable, "Mask Name", -1, xCoords.length);
 					maskTry = getOrCreateTableColumn(cellMaskTable, "Mask Try", -1, xCoords.length);
 					maskSuccess = getOrCreateTableColumn(cellMaskTable, "Mask Success", -1, xCoords.length);
 
 					if(TCSLoops > 0) {
+						print("Masks generated for previous TCS value");
 						prevTCSDir = directories[1]+imageNameRaw+"/"+"TCS"+tcsValue[TCSLoops-1]+"/";
 					} else {
 						prevTCSDir = 'none';
@@ -832,6 +883,8 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 							maskName[currCell] = File.getName(imageNamesArray[0]);
 
+							print("Generating mask for ", maskName[currCell]);
+
 							//This is an array to store the size of the local region in pixels (i.e. 120um in pixels)
 							LRLengthPixels=(LRSize*(1/iniValues[0]));
 							//[3] is size of the local region, [0] is the pixel size
@@ -848,6 +901,8 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 							//proceed
 
 							if(proceed == true){
+
+								print("Base coordinates are far enough from the edges of the image to proceed");
 	
 								//This array stores the width and height of our image so we can check against these
 								selectWindow(File.getName(avgProjImageLoc));
@@ -859,21 +914,13 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 								makeOrRetrieveLR(lrSaveLoc, xCoords[currCell], yCoords[currCell], LRLengthPixels, avgProjImageLoc);	
 
-								maximaCoordinates = findOrRetrieveOptimalCoordinates(avgProjImageLoc, xCoords, yCoords, xOpt, yOpt, currCell, substackCoordinatesLoc);
+								maximaCoordinates = findOrRetrieveOptimalCoordinates(avgProjImageLoc, xCoords, yCoords, xOpt, yOpt, optimalThreshold, currCell, substackCoordinatesLoc);
 								
-								print('Previous coordinates');
-								print(xCoords[currCell]);
-								print(yCoords[currCell]);
-
-								print('Maxima coordinates');
-								print(maximaCoordinates[0]);
-								print(maximaCoordinates[1]);
-
 								topValue = maximaCoordinates[2];
 
 								//Here we are finding the same connected regions using the maxima as our point selection and then measuring the area
 								//of the connected region to get an initial area size associated with the starting otsu value
-								firstArea = getCurrentMaskArea(maximaCoordinates[0], maximaCoordinates[1], otsu);
+								firstArea = getCurrentMaskArea(maximaCoordinates[0], maximaCoordinates[1], topValue);
 								
 								//Here we check the area output, and if it fits in certain conditions we either proceed with the iterative thresholding or move onto the next cell - more explanation can be found
 								//with the corresponding functions for each condition
@@ -882,7 +929,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 								nextIteration = false;
 								touching = tooCloseToEdge("Connected", fiveMicronsInPixels);
 
-								print("Area is = "+firstArea+"um^2 +/- "+selection[2]+"um^2");
+								print("Current area is = "+firstArea+"um^2");
 
 								//If -1, then the mask has failed
 								//If 0, then the masks have passed
@@ -921,6 +968,8 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 									ms = tcsValue[TCSLoops];
 									n = loopCount;
+									
+									print("Calculating next threshold value to use");
 
 									nextThresholdRaw = calculateNextThreshold(t1, a1, ms, n);
 
@@ -941,7 +990,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 									print("Threshold value of " + nextThreshold);
 									areaNew = getCurrentMaskArea(maximaCoordinates[0], maximaCoordinates[1], nextThreshold);
 
-									print("Area is = "+areaNew+"um^2 +/- "+selection[2]+"um^2");
+									print("Mask area is = "+areaNew+"um^2");
 					
 									//If we get the same area for 3 iterations we exit the iterative process, so here we count identical areas 
 									//(but if for any one instance they are not identical, we rest the counter)

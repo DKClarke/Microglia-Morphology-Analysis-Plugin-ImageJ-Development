@@ -84,50 +84,37 @@ for (currImage=0; currImage<imageName.length; currImage++) {
                         print("QC for: ", maskName[currCell]);
                         print("Cell no.: ", currCell+1, " / ", maskName.length);
 
+						//Open this TCS's version of the mask
                         cellMaskLoc = TCSDir + "Cell Masks/" + maskName[currCell];
                         open(cellMaskLoc);
-                        selectWindow(File.getName(cellMaskLoc));
+						selectWindow(File.getName(cellMaskLoc));
+						
+						//Create a selection from the mask
                         run("Create Selection");
                         getSelectionCoordinates(xpoints, ypoints);
 
                         substackCoordName = substring(maskName[currCell], indexOf(maskName[currCell], 'for'));
 
+						//Open the LR associated with this mask and apply the selection
                         cellLRLoc = directories[1]+imageNameRaw+"/Local Regions/" + "Local region " + substackCoordName;
                         open(cellLRLoc);
                         selectWindow(File.getName(cellLRLoc));
-                        makeSelection('freehand', xpoints, ypoints);
-				
-								//Here we open the local regions, outline the mask, and ask the user whether to keep the image or not
-								if(currentMaskValues[1]==0) {
-				
-									setBatchMode("Exit and Display");
-									selectWindow(currentMask);
-									run("Create Selection");
-									roiManager("Add");
-									
-									selectWindow(LRImage);
-									roiManager("show all");
-									approved = userApproval("Check image for issues", "Soma check", "Keep the image?");
-			
-									if(approved == true) {
-										currentMaskValues[2] = 1;
-									} else {
-										currentMaskValues[2] = 0;
-									}
-				
-									//The variable indicates we've checked the mask
-									currentMaskValues[1]=1; 
-			
-									roiManager("deselect");
-									roiManager("delete");
-										
-								}
-				
-								//Here if we decided to keep the mask and we haven't generated a soma mask for it yet, we do that
-								//The soma masks we generate aren't TCS specific so we save them in the overall output folder and check for all TCS's whether 
-								//we have a soma mask for the coordinates
-								//We check whether our soma mask has been created by looking in the directory where we would have saved it
-								if(currentMaskValues[2]==1 && File.exists(somaName)==0) {
+						makeSelection('freehand', xpoints, ypoints);
+						
+						setBatchMode("Show");
+						approved = userApproval("Check image for issues", "Mask check", "Keep the image?");
+
+						if(approved == true) {
+							maskQA[currCell] = 1;
+						} else {
+							maskQA[currCell] = 0;
+						}
+
+						somaName = directories[1]+imageNameRaw+"/Somas/Soma mask " + substackCoordName;
+
+						if(approved == true && File.exists(somaName) != 1) {
+
+						}
 				
 									selectWindow(currentMask);
 									run("Create Selection");

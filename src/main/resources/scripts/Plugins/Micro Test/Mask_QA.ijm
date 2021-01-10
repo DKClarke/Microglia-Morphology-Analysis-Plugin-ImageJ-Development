@@ -400,6 +400,8 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 							run("Analyze Particles...", "size=30-Infinity circularity=0.60-1.00 show=Masks display clear");
 							setBatchMode("Exit and Display");
 							waitForUser("Check out image");
+
+							//Seems to work up to here
 									
 							getStatistics(imageArea);
 

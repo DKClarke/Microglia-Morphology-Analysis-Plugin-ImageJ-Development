@@ -88,7 +88,13 @@ function getTableColumn(fileLoc, colName) {
 	tableName = Table.title;
 	selectWindow(tableName);
 
-	outputArray = Table.getColumn(colName);
+	columns = Table.headings;
+	if(indexOf(columns, colName) > -1) {
+		outputArray = Table.getColumn(colName);
+	} else {
+		outputArray = newArray(Table.size);
+		Array.fill(outputArray, -1);
+	}
 
 	selectWindow(tableName);
 	run("Close");
@@ -230,7 +236,7 @@ function userApproval(waitForUserDialog, dialogName, checkboxString) {
 	//Scale the image to fit, before exiting and displaying hidden images from 
 	//batch mode, autocontrasting the image, then waiting for the user				
 	run("Scale to Fit");					
-	setBatchMode("show");
+	setBatchMode("Show");
 	setOption("AutoContrast", true);
 	waitForUser(waitForUserDialog);
 
@@ -243,6 +249,108 @@ function userApproval(waitForUserDialog, dialogName, checkboxString) {
 	return output;
 }
 
+function saveMaskGenerationTable(maskName, maskTry, maskSuccess, maskQA, saveLoc) {
+	//Save these arrays into a table
+	Table.create("Mask Generation.csv");
+	selectWindow("Mask Generation.csv");
+	Table.setColumn("Mask Name", maskName);
+	Table.setColumn("Mask Try", maskTry);
+	Table.setColumn("Mask Success", maskSuccess);
+	Table.setColumn("Mask QA", maskQA);
+	Table.save(saveLoc);
+	selectWindow("Mask Generation.csv");
+	run("Close");
+}
+
+function saveTCSStatusTable(currentSubstack, tcsValue, tcsMasksGenerated, tcsQCChecked, tcsAnalysed, saveLoc) {
+	//Save these arrays into a table
+	Table.create("TCS Status Substack(" + currentSubstack +").csv");
+	selectWindow("TCS Status Substack(" + currentSubstack +").csv");
+	Table.setColumn("TCS", tcsValue);
+	Table.setColumn("Masks Generated", tcsMasksGenerated);
+	Table.setColumn("QC Checked", tcsQCChecked);
+	Table.setColumn("Analysed", tcsAnalysed);
+	Table.save(saveLoc);
+	selectWindow("TCS Status Substack(" + currentSubstack +").csv");
+	run("Close");
+}
+
+function getCellMaskApproval(cellMaskLoc, cellLRLoc) {
+
+	//Open this TCS's version of the mask
+	open(cellMaskLoc);
+	selectWindow(File.getName(cellMaskLoc));
+	run("Select None");
+	
+	//Create a selection from the mask
+	run("Create Selection");
+	getSelectionCoordinates(xpoints, ypoints);
+
+	//Open the LR associated with this mask and apply the selection
+	open(cellLRLoc);
+	selectWindow(File.getName(cellLRLoc));
+	run("Select None");
+	makeSelection('freehand', xpoints, ypoints);
+
+	setBatchMode("Show");
+	approved = userApproval("Check image for issues", "Mask check", "Keep the image?");
+
+	return approved;
+
+}
+
+function generateCellSomaMask(cellMaskLoc, cellLRLoc) {
+
+	selectWindow(File.getName(cellMaskLoc));
+	run("Select None");
+	
+	//Create a selection from the mask
+	run("Create Selection");
+	getSelectionCoordinates(xpoints, ypoints);
+
+	selectWindow(File.getName(cellLRLoc));
+	run("Select None");
+	run("Duplicate...", " ");
+	rename("Soma Mask");
+	selectWindow("Soma Mask");
+	makeSelection('freehand', xpoints, ypoints);
+	run("Clear Outside");
+	run("Select None");
+	run("Auto Threshold", "method=Intermodes  white");
+	logString = getInfo("log");
+	intermodesIndex = lastIndexOf(logString, "Intermodes");
+
+	//This is if there is an issue with the auto thresholding so we avoid an error
+	if(intermodesIndex!=-1) {
+		print("Intermodes didn't work");
+		run("Auto Threshold", "method=Otsu  white");
+		selectWindow("Log");
+		run("Close");
+	}
+	
+	run("Open");
+	run("Watershed");
+
+	for(i1=0; i1<3; i1++) {
+		run("Erode");
+	}
+
+	for(i1=0; i1<2; i1++) {
+		run("Dilate");
+	}
+	
+	run("Invert");
+
+	//Here we check how many particles have been left after this process
+	run("Auto Threshold", "method=Default");
+	run("Clear Results");
+	run("Analyze Particles...", "size=30-Infinity circularity=0.60-1.00 show=Masks display clear");
+
+	return nResults;
+
+}
+
+setBatchMode(true);
 
 //Get user input into where our working directory, and image storage directories, reside
 directories = getWorkingAndStorageDirectories();
@@ -319,263 +427,194 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 				maskName = getTableColumn(cellMaskTable, "Mask Name");
 				maskTry = getTableColumn(cellMaskTable, "Mask Try");
 				maskSuccess = getTableColumn(cellMaskTable, "Mask Success");
-				
-				maskQA = newArray(maskName.length);
-				Array.fill(maskQA, -1);
-                //maskQA = getTableColumn(cellMaskTable, "Mask QA");
+                maskQA = getTableColumn(cellMaskTable, "Mask QA");
 
 				//We now loop through all the cells for this given input image
 				for(currCell=0; currCell<maskName.length; currCell++) {
 
+					substackCoordName = substring(maskName[currCell], indexOf(maskName[currCell], 'for'));
+					cellLRLoc = directories[1]+imageNameRaw+"/Local Regions/" + "Local region " + substackCoordName;
+
                     if(maskSuccess[currCell] == 1 && maskQA[currCell] == -1) {
 			
                         print("QC for: ", maskName[currCell]);
-                        print("Cell no.: ", currCell+1, " / ", maskName.length);
+						print("Cell no.: ", currCell+1, " / ", maskName.length);
 
-						//Open this TCS's version of the mask
-                        cellMaskLoc = TCSDir + "Cell Masks/" + maskName[currCell];
-                        open(cellMaskLoc);
-						selectWindow(File.getName(cellMaskLoc));
-						
-						//Create a selection from the mask
-                        run("Create Selection");
-                        getSelectionCoordinates(xpoints, ypoints);
-
-                        substackCoordName = substring(maskName[currCell], indexOf(maskName[currCell], 'for'));
-
-						//Open the LR associated with this mask and apply the selection
-                        cellLRLoc = directories[1]+imageNameRaw+"/Local Regions/" + "Local region " + substackCoordName;
-                        open(cellLRLoc);
-                        selectWindow(File.getName(cellLRLoc));
-						makeSelection('freehand', xpoints, ypoints);
-						
-						setBatchMode("Show");
-						approved = userApproval("Check image for issues", "Mask check", "Keep the image?");
+						cellMaskLoc = TCSDir + "Cell Masks/" + maskName[currCell];
+						approved = getCellMaskApproval(cellMaskLoc, cellLRLoc);
 
 						if(approved == true) {
 							maskQA[currCell] = 1;
 						} else {
 							maskQA[currCell] = 0;
 						}
-
+						
 						somaName = directories[1]+imageNameRaw+"/Somas/Soma mask " + substackCoordName;
 
 						if(approved == true && File.exists(somaName) != 1) {
-				
-							selectWindow(File.getName(cellLRLoc));
-							run("Select None");
-							run("Duplicate...", " ");
-							rename("Soma Mask");
-							selectWindow("Soma Mask");
-							makeSelection('freehand', xpoints, ypoints);
-							run("Clear Outside");
-							run("Select None");
-							run("Auto Threshold", "method=Intermodes  white");
-							logString = getInfo("log");
-							intermodesIndex = lastIndexOf(logString, "Intermodes");
 
-							//This is if there is an issue with the auto thresholding so we avoid an error
-							if(intermodesIndex!=-1) {
-								print("Intermodes didn't work");
-								run("Auto Threshold", "method=Otsu  white");
-								selectWindow("Log");
-								run("Close");
-							}
-							
-							run("Open");
-							run("Watershed");
-	
-							for(i1=0; i1<3; i1++) {
-								run("Erode");
-							}
-	
-							for(i1=0; i1<2; i1++) {
-								run("Dilate");
-							}
-							
-							run("Invert");
+							particles = generateCellSomaMask(cellMaskLoc, cellLRLoc);
 
-							//Here we check how many particles have been left after this process
-							run("Auto Threshold", "method=Default");
-							run("Analyze Particles...", "size=30-Infinity circularity=0.60-1.00 show=Masks display clear");
-							setBatchMode("Exit and Display");
-							waitForUser("Check out image");
+							keepSoma = false;
 
-							//Seems to work up to here
-									
-							getStatistics(imageArea);
-
-							if(getResult("Mean")==0 || getResult("Mean")==255) {
-								keep = false;
-								somaArea = imageArea;
-							} else {
+							if(particles == 1) {
+								selectWindow("Mask of Soma Mask");
 								run("Create Selection");
-								run("Clear Results");
-								run("Measure");
-								somaArea = getResult("Area");
-								run("Select None");
-							}
-				
-							//If only one particle is present
-							if(somaArea!= imageArea && nResults==1) {
-							
-								selectWindow("Mask of " + LRTifLess + "-1.tif");
-								rename(imageNamesArray[1]);
-								run("Create Selection");
-								roiManager("Add");
-								selectWindow(LRImage);
-								roiManager("select", 1);
-								roiManager("Show All");
-								keep = userApproval("Check image soma mask", "Soma check", "Keep the soma mask?");
-	
-								if(keep == true) {
-									selectWindow(imageNamesArray[1]);
-									saveAs("tiff", somaName);
-									run("Close");
-								}
-	
-								roiManager("select", 1);
-								roiManager("delete");
-		
-							} 
+								run("Make Inverse");
+								getSelectionCoordinates(somaXpoints, somaYpoints);
+								selectWindow(File.getName(cellLRLoc));
+								makeSelection('freehand', somaXpoints, somaYpoints);
+								keepSoma = userApproval("Check image soma mask", "Soma check", "Keep the soma mask?");
 
-							//If we have more or less than 1 particle, we have to draw our own soma mask and we do that
-							//Could incorporate this with the code above as it does very similar things?
-							if (keep==false || somaArea == imageArea) {
-		
+							}
+
+							if(keepSoma == false) {
+
 								waitForUser("Need to draw manual soma mask");
-								selectWindow(LRImage);
-								roiManager("Show All");
-	
+								selectWindow(File.getName(cellLRLoc));
+								run("Select None");
 								for(i1=0; i1<3; i1++) {
 									run("In [+]");
 								}
-	
 								run("Scale to Fit");
 								setTool("polygon");
-								setBatchMode("Exit and Display");
-								waitForUser("Draw appropriate soma mask");
-								roiManager("add");
-								roiManager("select", 1);
-								run("Create Mask");
-								selectWindow("Mask");
-								saveAs("tiff", somaName);
-								run("Close");
-								
+								setBatchMode("Show");
+								waitForUser("Draw appropriate soma mask, click 'ok' when done");
+								getSelectionCoordinates(somaXpoints, somaYpoints);
 							}
-	
-							selectWindow(LRTifLess+"-1.tif");
-							run("Close");
-							roiManager("deselect");
-							roiManager("delete");
+
+							selectWindow(File.getName(cellLRLoc));
+							makeSelection('freehand', somaXpoints, somaYpoints);
+							run("Create Mask");
+							selectWindow("Mask");
+							rename(File.getName(somaName));
+							saveAs("tiff", somaName);
+
+						} else if (File.exists(somaName) == 1) {
+							print('Soma mask ', File.getNameWithoutExtension(somaName), ' already exists');
+						} else if (approved != true) {
+							print('Cell mask ', maskName[currCell], ' rejected');
 						}
 
+						close("*");
+
+						saveMaskGenerationTable(maskName, maskTry, maskSuccess, maskQA, cellMaskTable);
+
 					}
+
 				}
+
+				tcsQCChecked[TCSLoops] = 1;
+
+				saveTCSStatusTable(substackNames[currSubstack], tcsValue, tcsMasksGenerated, tcsQCChecked, tcsAnalysed, tcsStatusTable);
+
 			}
 		}
 	}
 }
-				
-								//Here if we want to trace cells, and haven't traced the cell in questions and we've deicded to keep it, then we do just that
-								if(selection[4]==1 && currentMaskValues[3]==0 && currentMaskValues[2]==1) {
-				
-									selectWindow(currentMask);
-									run("Invert");
-									run("Create Selection");
-									roiManager("Add");
-									selectWindow(currentMask);
-									run("Close");
-									
-									selectWindow(LRImage);
-									roiManager("select", 0);
-									roiManager("Show All");
-					
-									setTool("polygon");
-									setBatchMode("Exit and Display");
-									waitForUser("Draw around any missing processes, add these to roi manager");
-				
-									//Here we combine all the traces into a single ROI and use this to create a new mask from the local region
-									if((roiManager("count"))>1) {
-										roiManager("deselect");
-										roiManager("Combine");
-										roiManager("deselect");
-										roiManager("delete");
-										roiManager("add");
-									} else {	
-										roiManager("deselect");	
-									}
-										
-									run("Select None");
-									selectWindow(LRImage);
-									roiManager("select", 0);
-									run("Clear Outside");
-									run("Fill", "slice");
-									run("Select None");
-									run("Invert");
-									run("Auto Threshold", "method=Default");
-									run("Invert");
-									selectWindow(LRImage);
-									saveAs("tiff", storageFoldersArray[3]+maskDirFiles[i0]);
-									run("Close");
-				
-									//This indicates we've traced the image
-									currentMaskValues[3]=1;
-									
-								}
-				
-								Housekeeping();
 
-							//If we don't need to check the mask, set this to say it has been checked
-							} else {
-								currentMaskValues[1]=1; 
-							}
+print('Mask QA Finished');
 
-							//Update and save our TCS analysis table
-							selectWindow("QC Checked");
-							for(i1=0; i1<tableLabels.length; i1++) {
-								if(i1==0) {
-									stringValue = currentMaskValues[i1];
-									Table.set(tableLabels[i1], i0, stringValue);
-								} else {
-									Table.set(tableLabels[i1], i0, currentMaskValues[i1]);
-								}
-							}
-								
-							Housekeeping();	
-						}
-			
-						selectWindow("QC Checked");
-						Table.save(TCSDir+"QC Checked.csv");
-						newName = Table.title;
-						Table.rename(newName, "QC Checked");
-						Table.reset("QC Checked");
-						Table.update;
-						print("saved at: ", TCSDir + "QC Checked.csv");
+if(false) {
+	{
+		{
+			{
+				{
+					{
 				
-						//Here we set that we've finished QC for the particular TCS
-						currentLoopValues[2] = 1;
-			
-						//Update and save our TCS analysis table
-						selectWindow("TCS Status");
-						for(i0=0; i0<TCSColumns.length; i0++) {
-							Table.set(TCSColumns[i0], TCSLoops, currentLoopValues[i0]);
-						}
-		
-						Table.update;
-						Housekeeping();
-			
-					}
+						selectWindow(currentMask);
+						run("Invert");
+						run("Create Selection");
+						roiManager("Add");
+						selectWindow(currentMask);
+						run("Close");
 						
+						selectWindow(LRImage);
+						roiManager("select", 0);
+						roiManager("Show All");
+		
+						setTool("polygon");
+						setBatchMode("Exit and Display");
+						waitForUser("Draw around any missing processes, add these to roi manager");
+	
+						//Here we combine all the traces into a single ROI and use this to create a new mask from the local region
+						if((roiManager("count"))>1) {
+							roiManager("deselect");
+							roiManager("Combine");
+							roiManager("deselect");
+							roiManager("delete");
+							roiManager("add");
+						} else {	
+							roiManager("deselect");	
+						}
+							
+						run("Select None");
+						selectWindow(LRImage);
+						roiManager("select", 0);
+						run("Clear Outside");
+						run("Fill", "slice");
+						run("Select None");
+						run("Invert");
+						run("Auto Threshold", "method=Default");
+						run("Invert");
+						selectWindow(LRImage);
+						saveAs("tiff", storageFoldersArray[3]+maskDirFiles[i0]);
+						run("Close");
+	
+						//This indicates we've traced the image
+						currentMaskValues[3]=1;
+						
+					}
+	
+					Housekeeping();
+
+				//If we don't need to check the mask, set this to say it has been checked
+				} else {
+					currentMaskValues[1]=1; 
 				}
-				
-				selectWindow("TCS Status");
-				Table.update;
-				Table.save(directories[1]+imageNames[3]+"/TCS Status.csv");
-				currtitle = Table.title;
-				Table.rename(currtitle, "TCS Status");
+
+				//Update and save our TCS analysis table
+				selectWindow("QC Checked");
+				for(i1=0; i1<tableLabels.length; i1++) {
+					if(i1==0) {
+						stringValue = currentMaskValues[i1];
+						Table.set(tableLabels[i1], i0, stringValue);
+					} else {
+						Table.set(tableLabels[i1], i0, currentMaskValues[i1]);
+					}
+				}
 					
+				Housekeeping();	
 			}
+
+			selectWindow("QC Checked");
+			Table.save(TCSDir+"QC Checked.csv");
+			newName = Table.title;
+			Table.rename(newName, "QC Checked");
+			Table.reset("QC Checked");
+			Table.update;
+			print("saved at: ", TCSDir + "QC Checked.csv");
+	
+			//Here we set that we've finished QC for the particular TCS
+			currentLoopValues[2] = 1;
+
+			//Update and save our TCS analysis table
+			selectWindow("TCS Status");
+			for(i0=0; i0<TCSColumns.length; i0++) {
+				Table.set(TCSColumns[i0], TCSLoops, currentLoopValues[i0]);
+			}
+
+			Table.update;
+			Housekeeping();
+
 		}
+			
 	}
+	
+	selectWindow("TCS Status");
+	Table.update;
+	Table.save(directories[1]+imageNames[3]+"/TCS Status.csv");
+	currtitle = Table.title;
+	Table.rename(currtitle, "TCS Status");
+
 }

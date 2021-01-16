@@ -82,6 +82,7 @@ function getExtremaCoordinates(cellMaskLoc) {
 	selectWindow(File.getName(cellMaskLoc));
 	run("Create Selection");
 	getSelectionCoordinates(xpoints, ypoints);
+	rim("Select None");
 
 	//This bit is used to calculate the leftmost, rightmost, bottommost, and topmost parts of the mask
 	//We then calculate the average distance between the centre of mass of the mask and these points
@@ -102,6 +103,43 @@ function getExtremaCoordinates(cellMaskLoc) {
 	//[4] and [5] are x and highest y (bottommost) [6] and [7] are x with lowest y (topmost)
 
 	return xAndYPoints
+
+}
+
+function getCMToExtremaDistances(cellMaskLoc) {
+
+	selectWindow(File.getName(cellMaskLoc));
+	run("Duplicate");
+	rename("Cell Spread");
+	run("Properties...", "channels=1 slices=1 frames=1 unit=pixels pixel_width=1 pixel_height=1 voxel_depth=1");
+	List.setMeasurements;
+
+	resultsStrings = newArray("XM", "YM");
+	centresOfMass = newArray(2);
+
+	for(cmCoord=0; cmCoord<resultsStrings.length; cmCoord++) {
+		centresOfMass[cmCoord] = List.getValue(resultsStrings[cmCoord]);
+	}
+
+	distances = newArray(4);
+	//[0] is distance to the right, [1] is to the left, [2] is the top, [3] is the bottom
+
+	for(extrema=0; extrema<4; extrema++) {
+		xToCheck = xAndYPoints[(extrema*2)];
+		yToCheck = xAndYPoints[(extrema*2)+1];
+
+		xDistance = abs(xToCheck-centresOfMass[0]);
+		yDistance = abs(yToCheck-centresOfMass[1]);
+
+		distances[extrema] = sqrt((pow(xDistance,2) + pow(yDistance,2)));
+
+		makeLine(centresOfMass[0], centresOfMass[1],  xAndYPoints[(extrema*2)], xAndYPoints[(extrema*2)+1]);
+	}
+
+	selectWindow("Cell Spread");
+	run("Close");
+
+	return distances;
 
 }
 
@@ -255,50 +293,12 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 						//[0] and [1] are highest x with y (rightmost), [2] and [3] are lowest x with y (leftmost), 
 						//[4] and [5] are x and highest y (bottommost) [6] and [7] are x with lowest y (topmost)
 
-						//We're up to here
-						
-							open(storageFoldersArray[4]+"Local region for "+ substring(maskDirFiles[i0], indexOf(maskDirFiles[i0],"Substack")));
-							LRImage = getTitle();
-							selectWindow(LRImage);
-							getDimensions(LRwidth, LRheight, LRchannels, LRslices, LRframes);
-				
-							//Calibrate to pixels so we can get the right values when we make points on our image as the previously generated variables are all
-							//calibrated in pixels
-							selectWindow(LRImage);
-							run("Properties...", "channels="+LRchannels+" slices="+LRslices+" frames="+LRframes+" unit=pixels pixel_width=1 pixel_height=1 voxel_depth=1");
-							roiManager("select", 0);
-							List.setMeasurements;
-		
-							resultsStrings = newArray("XM", "YM");
-							centresOfMass = newArray(2);
-		
-							for(i1=0; i1<resultsStrings.length; i1++) {
-								centresOfMass[i1] = List.getValue(resultsStrings[i1]);
-							}
-		
-							run("Select None");
-							distances = newArray(4);
-							//[0] is distance to the right, [1] is to the left, [2] is the top, [3] is the bottom
-		
-							for(i1=0; i1<4; i1++) {
-								xToCheck = xAndYPoints[(i1*2)];
-								yToCheck = xAndYPoints[(i1*2)+1];
-		
-								xDistance = abs(xToCheck-centresOfMass[0]);
-								yDistance = abs(yToCheck-centresOfMass[1]);
-		
-								distances[i1] = sqrt((pow(xDistance,2) + pow(yDistance,2)));
-		
-								makeLine(centresOfMass[0], centresOfMass[1],  xAndYPoints[(i1*2)], xAndYPoints[(i1*2)+1]);
-								Roi.setStrokeColor("red");
-								roiManager("add");
-							}
-		
-							//Store the average distance from the centre of mass to the xtremeties
-							Array.getStatistics(distances, disMin, disMax, disMean, disStdDev);
-							currentMaskValues[2] = disMean;
+						distances = getCMToExtremaDistances(cellMaskLoc);
+
+						//Store the average distance from the centre of mass to the xtremeties
+						Array.getStatistics(distances, disMin, disMax, disMean, disStdDev);
+						simpleValues[1] = disMean;
 							
-							run("Select None");
 				
 							//This is saving an image to show where the lines and centre are
 							selectWindow(LRImage);

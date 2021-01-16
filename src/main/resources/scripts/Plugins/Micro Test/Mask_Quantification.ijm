@@ -297,8 +297,14 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 						//Store the average distance from the centre of mass to the xtremeties
 						Array.getStatistics(distances, disMin, disMax, disMean, disStdDev);
-						simpleValues[1] = disMean;
-							
+
+						//Convert our average distance from centre of mass to extrema to calibrated units from our image
+						//though this assumed a square pixel
+						calibratedDisMean = disMean * xPxlSz;
+						simpleValues[1] = calibratedDisMean;
+						
+
+						//We're up to here
 				
 							//This is saving an image to show where the lines and centre are
 							selectWindow(LRImage);

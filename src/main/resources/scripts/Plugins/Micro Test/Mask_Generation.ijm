@@ -416,7 +416,7 @@ function substacksToUse(substackTableLoc, nameCol, processedCol, QCCol) {
 
 }
 
-function saveMaskGenerationTable(maskName, maskTry, maskSuccess, saveLoc) {
+function saveMaskGenerationTable(maskName, maskTry, maskSuccess, maskQA, maskQuant, saveLoc) {
 	//Save these arrays into a table
 	Table.create("Mask Generation.csv");
 	selectWindow("Mask Generation.csv");
@@ -424,6 +424,7 @@ function saveMaskGenerationTable(maskName, maskTry, maskSuccess, saveLoc) {
 	Table.setColumn("Mask Try", maskTry);
 	Table.setColumn("Mask Success", maskSuccess);
 	Table.setColumn("Mask QA", maskQA);
+	Table.setColumn("Mask Quantified", maskQuant);
 	Table.save(saveLoc);
 	selectWindow("Mask Generation.csv");
 	run("Close");
@@ -980,6 +981,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 				maskTry = getOrCreateTableColumn(cellMaskTable, "Mask Try", -1, xCoords.length);
 				maskSuccess = getOrCreateTableColumn(cellMaskTable, "Mask Success", -1, xCoords.length);
 				maskQA = getOrCreateTableColumn(cellMaskTable, "Mask QA", -1, xCoords.length);
+				maskQuant = getOrCreateTableColumn(cellMaskTable, "Mask Quantified", -1, xCoords.length);
 
 				if(TCSLoops > 0) {
 					print("Masks generated for previous TCS value");
@@ -1090,7 +1092,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 							print("Mask generation failed");
 						}
 
-						saveMaskGenerationTable(maskName, maskTry, maskSuccess, maskQA, cellMaskTable);
+						saveMaskGenerationTable(maskName, maskTry, maskSuccess, maskQA, maskQuant, cellMaskTable);
 	
 						//Update and save our cellMaskTable = TCSDir + "Mask Generation.csv" table
 

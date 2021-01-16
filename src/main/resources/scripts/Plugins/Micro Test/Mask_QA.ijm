@@ -249,7 +249,7 @@ function userApproval(waitForUserDialog, dialogName, checkboxString) {
 	return output;
 }
 
-function saveMaskGenerationTable(maskName, maskTry, maskSuccess, maskQA, saveLoc) {
+function saveMaskGenerationTable(maskName, maskTry, maskSuccess, maskQA, maskQuant, saveLoc) {
 	//Save these arrays into a table
 	Table.create("Mask Generation.csv");
 	selectWindow("Mask Generation.csv");
@@ -257,6 +257,7 @@ function saveMaskGenerationTable(maskName, maskTry, maskSuccess, maskQA, saveLoc
 	Table.setColumn("Mask Try", maskTry);
 	Table.setColumn("Mask Success", maskSuccess);
 	Table.setColumn("Mask QA", maskQA);
+	Table.setColumn("Mask Quantified", maskQuant);
 	Table.save(saveLoc);
 	selectWindow("Mask Generation.csv");
 	run("Close");
@@ -408,7 +409,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 		for(TCSLoops=0; TCSLoops<tcsValue.length; TCSLoops++) {
 
-			if(tcsMasksGenerated[TCSLoops] == 1 && tcsQCChecked[TCSLoops] == -1) {
+			if(tcsQCChecked[TCSLoops] == -1) {
 
 				print("QA'ing masks for TCS value of ", tcsValue[TCSLoops]);
 
@@ -427,7 +428,8 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 				maskName = getTableColumn(cellMaskTable, "Mask Name");
 				maskTry = getTableColumn(cellMaskTable, "Mask Try");
 				maskSuccess = getTableColumn(cellMaskTable, "Mask Success");
-                maskQA = getTableColumn(cellMaskTable, "Mask QA");
+				maskQA = getTableColumn(cellMaskTable, "Mask QA");
+				maskQuant = getTableColumn(cellMaskTable, "Mask Quantified");
 
 				//We now loop through all the cells for this given input image
 				for(currCell=0; currCell<maskName.length; currCell++) {
@@ -498,7 +500,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 						close("*");
 
-						saveMaskGenerationTable(maskName, maskTry, maskSuccess, maskQA, cellMaskTable);
+						saveMaskGenerationTable(maskName, maskTry, maskSuccess, maskQA, maskQuant, cellMaskTable);
 
 					}
 

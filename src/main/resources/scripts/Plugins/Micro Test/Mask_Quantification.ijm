@@ -18,7 +18,7 @@ imageName = getTableColumn(imagesToUseFile, "Image Name");
 iniTextStringsPre = newArray("x.pixel.sz = ", "y.pixel.sz = ", "z.spacing = ", "no.of.planes = ", "frames.per.plane = ");
 
 //Array to store the values we need to calibrate our image with
-iniValues =  getIniData(directories[3], iniTextStringsPre);
+iniValues =  getIniData(directories[3], iniTextStringsPre); ;
 //Index 0 is xPxlSz, then yPxlSz, zPxlSz, ZperT, FperZ
 
 ////////////////////////////////////Automatic Microglial Segmentation///////////////////////////////////////////////////////////

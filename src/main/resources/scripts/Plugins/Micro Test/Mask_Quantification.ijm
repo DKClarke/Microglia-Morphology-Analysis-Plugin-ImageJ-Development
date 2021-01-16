@@ -1,3 +1,90 @@
+setBatchMode(true);
+
+//Get user input into where our working directory, and image storage directories, reside
+directories = getWorkingAndStorageDirectories();
+//[0] is input, [1] is output, [2] is done (working directories) [3] is directoryName (storage directory)
+
+//Populate our image info arrays
+imagesToUseFile = directories[1] + "Images to Use.csv";
+
+if(File.exists(imagesToUseFile) != 1) {
+	exit("Need to run the stack preprocessing and stack QA steps first");
+}
+
+//If we already have a table get out our existing status indicators
+imageName = getTableColumn(imagesToUseFile, "Image Name");
+
+//This is an array with the strings that come just before the information we want to retrieve from the ini file.
+iniTextStringsPre = newArray("x.pixel.sz = ", "y.pixel.sz = ", "z.spacing = ", "no.of.planes = ", "frames.per.plane = ");
+
+//Array to store the values we need to calibrate our image with
+iniValues =  getIniData(directories[3], iniTextStringsPre);
+//Index 0 is xPxlSz, then yPxlSz, zPxlSz, ZperT, FperZ
+
+////////////////////////////////////Automatic Microglial Segmentation///////////////////////////////////////////////////////////
+
+//This is the main body of iterative thresholding, we open processed input images and use the coordinates of the cell locations previuosly 
+//input to determine cell locations and create cell masks
+for (currImage=0; currImage<imageName.length; currImage++) {
+	
+	print("QA'ing masks generated for image ",File.getNameWithoutExtension(imageName[currImage]));
+
+	imageNameRaw = File.getNameWithoutExtension(imageName[currImage]);
+
+	statusTable = directories[1]+imageNameRaw+"/Cell Coordinate Masks/Cell Position Marking.csv";
+
+	if(File.exists(statusTable) != 1) {
+		exit("Run cell detection first");
+	}
+
+	substackNames = substacksToUse(statusTable, 'Substack', 'Processed', 'QC');
+
+	for(currSubstack = 0; currSubstack < substackNames.length; currSubstack++) {
+
+		print("Processing substack ", substackNames[currSubstack]);
+
+        tcsStatusTable = directories[1]+imageNameRaw+"/TCS Status Substack(" + substackNames[currSubstack] +").csv";
+        
+        if(File.exists(tcsStatusTable) != 1) {
+            exit("Run mask generation first");
+        }
+
+		tcsValue = getTableColumn(tcsStatusTable, "TCS");
+		tcsMasksGenerated = getTableColumn(tcsStatusTable, "Masks Generated");
+		tcsQCChecked = getTableColumn(tcsStatusTable, "QC Checked");
+		tcsAnalysed = getTableColumn(tcsStatusTable, "Analysed");
+
+		for(TCSLoops=0; TCSLoops<tcsValue.length; TCSLoops++) {
+
+			if(tcsMasksGenerated[TCSLoops] == 1 && tcsQCChecked[TCSLoops] == -1) {
+
+				print("QA'ing masks for TCS value of ", tcsValue[TCSLoops]);
+
+				//This is the directory for the current TCS
+				TCSDir=directories[1]+imageNameRaw+"/"+"TCS"+tcsValue[TCSLoops]+"/";
+				TCSMasks = TCSDir + "Cell Masks/";
+
+                cellMaskTable = TCSDir + "Substack (" + substackNames[currSubstack] + ") Mask Generation.csv";
+                
+                if(File.exists(cellMaskTable) != 1) {
+                    exit("Run mask generation first");
+                }
+
+				print("Retrieving mask generation status");
+
+				maskName = getTableColumn(cellMaskTable, "Mask Name");
+				maskTry = getTableColumn(cellMaskTable, "Mask Try");
+				maskSuccess = getTableColumn(cellMaskTable, "Mask Success");
+                maskQA = getTableColumn(cellMaskTable, "Mask QA");
+
+				//We now loop through all the cells for this given input image
+				for(currCell=0; currCell<maskName.length; currCell++) {
+
+					substackCoordName = substring(maskName[currCell], indexOf(maskName[currCell], 'for'));
+					cellLRLoc = directories[1]+imageNameRaw+"/Local Regions/" + "Local region " + substackCoordName;
+
+
+
 //Set the background color to black otherwise this messes with the clear outside command
 setBackgroundColor(0,0,0);
 	

@@ -1,3 +1,110 @@
+function getSkeletonMeasurements(cellMaskLoc) {
+
+	selectWindow(File.getName(cellMaskLoc));
+	//Skeletonise the image then get out the measures associated with the skelNames array from earlier
+	run("Duplicate...", " ");
+	rename("For Skeleton");
+	run("Skeletonize (2D/3D)");
+	run("Clear Results");
+	run("Analyze Skeleton (2D/3D)", "prune=[shortest branch] calculate");
+		
+	//If we're getting out length, we measure the number of pixels in the skeleton
+	storeValues = newArray(skelNames.length);
+	for(currMeasure = 0; currMeasure< skelNames.length; currMeasure++) {
+		if(skelNames.length[currMeasure] != 'SkelArea') {
+		storeValues[currMeasure] = getResult(skelNames[currMeasure], 0);
+		} else {
+			selectWindow("For Skeleton");
+			run("Invert");
+			run("Create Selection");
+			getRawStatistics(nPixels);
+			storeValues[currMeasure] = nPixels;
+			run("Select None");
+		}
+	}
+	run("Clear Results");
+
+	//Close images we don't need anymore
+	toClose = newArray("Longest shortest paths", "Tagged skeleton", "For Skeleton");
+	for(closeImage = 0; closeImage< toClose.length; closeImage++) {
+		if(isOpen(toClose[closeImage])==1) {
+		selectWindow(toClose[closeImage]);
+		run("Close");
+		}
+	}
+
+	return storeValues;
+}
+
+function getMeanOfMatchingCoordinates(refArray, refFind, findInArray) {
+
+	//Loop through all our x coordinates in the selection
+	matchingY = newArray(refArray.length);
+	Array.fill(matchingY, -1);
+	for(xCoord=0; xCoord<refArray.length; xCoord++) {
+		
+		//Get the y coordinates where our x is highest (i.e. rightmost)
+		if(refArray[xCoord] == refFind) {
+			matchingY[xCoord] = findInArray[xCoord];
+		}
+
+	}
+
+	cleanY = Array.deleteValue(matchingY, -1);
+	Array.getStatistics(cleanY, cleanYMin, cleanYMax, cleanYmean, cleanYstdDev);
+
+	return round(cleanYmean);
+
+}
+
+function getSimpleMeasurements(cellMaskLoc,simpleValues) {
+
+	//Select our non skeletonised image, get its perim, circul, AR, and area
+	selectWindow(File.getName(cellMaskLoc));
+	run("Create Selection");
+	List.setMeasurements;
+
+	resultsStrings = newArray("Perim.", "Circ.", "AR", "Area");
+	currentLoopIndices = newArray(0,3,2,5);
+
+	for(i1=0; i1<resultsStrings.length; i1++) {
+		simpleValues[(currentLoopIndices[i1])] = List.getValue(resultsStrings[i1]);
+	}
+
+	run("Select None");
+
+	return simpleValues;
+
+}
+
+function getExtremaCoordinates(cellMaskLoc) {
+
+	selectWindow(File.getName(cellMaskLoc));
+	run("Create Selection");
+	getSelectionCoordinates(xpoints, ypoints);
+
+	//This bit is used to calculate the leftmost, rightmost, bottommost, and topmost parts of the mask
+	//We then calculate the average distance between the centre of mass of the mask and these points
+	//for our measure of cell spread
+
+	Array.getStatistics(xpoints, xMin, xMax, mean, stdDev);
+	Array.getStatistics(ypoints, yMin, yMax, mean, stdDev);
+
+	//E.g. for rightmostY, find the Y coordinates that occur where x is highest, then get the mean of these coordinates
+	//and return this as the Y coordinate of the rightmost extrema of the mask
+	rightmostY = getMeanOfMatchingCoordinates(xpoints, xMax, ypoints);
+	leftmostY = getMeanOfMatchingCoordinates(xpoints, xMin, ypoints);
+	topmostX = getMeanOfMatchingCoordinates(ypoints, yMin, xpoints);
+	bottommostX = getMeanOfMatchingCoordinates(ypoints, yMax, xpoints);
+
+	xAndYPoints = newArray(xMax, rightmostY, xMin, leftmostY, bottommostX, yMax, topmostX, yMin);
+	//[0] and [1] are highest x with y (rightmost), [2] and [3] are lowest x with y (leftmost), 
+	//[4] and [5] are x and highest y (bottommost) [6] and [7] are x with lowest y (topmost)
+
+	return xAndYPoints
+
+}
+
 setBatchMode(true);
 
 //Get user input into where our working directory, and image storage directories, reside
@@ -7,6 +114,8 @@ directories = getWorkingAndStorageDirectories();
 //Set the path to where we copy our analysed cells to so we can run a fractal analysis on this folder in 
 //batch at a later timepoint - if this directory doesn't exist, make it
 fracLacPath = directories[1]+"fracLac/";
+
+makeDirectories(newArray(fracLacPath));
 
 //Populate our image info arrays
 imagesToUseFile = directories[1] + "Images to Use.csv";
@@ -95,17 +204,16 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 						cellMaskLoc = TCSDir + "Cell Masks/" + maskName[currCell];
 		
-						//oldParams is a list of the parameters we measure using the normal measurements function in
+						//simpleParams is a list of the parameters we measure using the normal measurements function in
 						//imageJ
-						oldParams = newArray("Analysed", "Perimeter", "Cell Spread", "Eccentricity", 
-													"Roundness", "Soma Size", "Mask Size"); 
+						simpleParams = newArray("Perimeter", "Cell Spread", "Eccentricity", 
+												"Roundness", "Soma Size", "Mask Size"); 
+						simpleValues = newArray(simpleParams.length);
 
 						//skelNames is a list of the parameters we measure on a skeletonised image in imageJ
-						skelNames = newArray("# Branches", "# Junctions", "# End-point voxels", "# Junction voxels", 
+						skelParams = newArray("# Branches", "# Junctions", "# End-point voxels", "# Junction voxels", 
 						"# Slab voxels", "Average Branch Length", "# Triple points", "# Quadruple points", 
 						"Maximum Branch Length", "Longest Shortest Path", "SkelArea");
-
-						valuesToRecord = Array.concat(oldParams, skelNames);
 
 						////////
 						////////
@@ -125,123 +233,29 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 						////////
 						////////
 
-						//We're here
+						cellFracLacPath = fracLacPath + "TCS"+tcsValue[TCSLoops]+"/" + maskName[currCell];
 							
 						//If we haven't already copied the cell to the fracLac folder, do so
-						if(File.exists(fracLacPath + "TCS" + toString(currentLoopValues[0]) +  imageNames[0] + maskDirFiles[i0]) == 0) {
-							File.copy(storageFoldersArray[3] + maskDirFiles[i0], fracLacPath + "TCS" + toString(currentLoopValues[0]) +  imageNames[0] + maskDirFiles[i0]);
+						if(File.exists(cellFracLacPath) == 0) {
+							File.copy(cellMaskLoc, cellFracLacPath);
 						}
 							
-							//Get out our skeleton values
-							open(storageFoldersArray[3] + maskDirFiles[i0]);
-							getDimensions(maskWidth, maskHeight, maskChannels, maskSlices, maskFrames);
+						//Get out our skeleton values
+						open(cellMaskLoc);
+						getDimensions(maskWidth, maskHeight, maskChannels, maskSlices, maskFrames);
 
-							//Set calibration to pixels
-							run("Properties...", "channels="+maskChannels+" slices="+maskSlices+" frames="+maskFrames+" unit=pixels pixel_width=1 pixel_height=1 voxel_depth=1");
-							rename("Test");
+						//Set calibration to pixels
+						run("Properties...", "channels="+maskChannels+" slices="+maskSlices+" frames="+maskFrames+" unit=pixels pixel_width=1 pixel_height=1 voxel_depth=1");
+						
+						skelValues = getSkeletonMeasurements(cellMaskLoc, skelParams);
 
-							run("Clear Results");
-							
-							//Skeletonise the image then get out the measures associated with the skelNames array from earlier
-							run("Duplicate...", " ");
-							run("Invert");
-							run("Skeletonize (2D/3D)");
-							run("Analyze Skeleton (2D/3D)", "prune=[shortest branch] calculate");
-							
-							//If we're getting out length, we measure the number of pixels in the skeleton
-							storeValues = newArray(skelNames.length);
-							for(i1 = 0; i1< skelNames.length; i1++) {
-								if(i1 < skelNames.length-1) {
-								storeValues[i1] = getResult(skelNames[i1], 0);
-								} else {
-									selectWindow("Test-1");
-									run("Invert");
-									run("Create Selection");
-									getRawStatistics(nPixels);
-									storeValues[i1] = nPixels;
-									run("Select None");
-								}
-							}
-							run("Clear Results");
+						simpleValues = getSimpleMeasurements(cellMaskLoc,simpleValues);
 
-							//Close images we don't need anymore
-							toClose = newArray("Longest shortest paths", "Tagged skeleton", "Test-1");
-							for(i1 = 0; i1< toClose.length; i1++) {
-								if(isOpen(toClose[i1])==1) {
-								selectWindow(toClose[i1]);
-								run("Close");
-								}
-							}
-							
-							//Select our non skeletonised image, get its perim, circul, AR, and area
-							selectWindow("Test");
-							rename(maskDirFiles[i0]);
-							run("Create Selection");
-							roiManager("add");
-							List.setMeasurements;
-		
-							resultsStrings = newArray("Perim.", "Circ.", "AR", "Area");
-							currentLoopIndices = newArray(1,4,3,6);
-		
-							for(i1=0; i1<resultsStrings.length; i1++) {
-								currentMaskValues[(currentLoopIndices[i1])] = List.getValue(resultsStrings[i1]);
-							}
-		
-							run("Select None");
-							run("Invert");
-							run("Points from Mask");
-				
-							//This bit is used to calculate the leftmost, rightmost, bottommost, and topmost parts of the mask
-							//We then calculate the average distance between the centre of mass of the mask and these points
-							//for our measure of cell spread
-		
-							//Get the selection coordinates of our mask
-							getSelectionCoordinates(x, y);
-		
-							Array.getStatistics(x, xMin, xMax, mean, stdDev);
-							Array.getStatistics(y, yMin, yMax, mean, stdDev);
-		
-							valuesToMatch = newArray(xMax, xMin, yMax, yMin);
-		
-							xAndYPoints = newArray(xMax, 0, xMin, 0, 0, yMax, 0, yMin);
-							//[0] and [1] are highest x with y (rightmost), [2] and [3] are lowest x with y (leftmost), 
-							//[4] and [5] are x and highest y (topmost) [7] and [8] are x with lowest y (bottommost)
-		
-							for(i1=0; i1<valuesToMatch.length; i1++) {	
-								associatedValues = newArray(1);
-								arrayToConcat = newArray(1);
-								for(i2=0; i2<x.length; i2++) {
-									matched = false;
-									if(i1<2) {
-										if(x[i2] == valuesToMatch[i1]) {
-											associatedValues[associatedValues.length-1] = y[i2];
-											matched = true;
-										}
-									} else {
-										if(y[i2] == valuesToMatch[i1]) {
-											associatedValues[associatedValues.length-1] = x[i2];
-											matched = true;
-										}
-									}
-									if(matched == true){
-										//setBatchMode("exit and display");
-										//Array.show("test", associatedValues);
-										//waitForUser("");
-										associatedValues = Array.concat(associatedValues, arrayToConcat);
-									}	
-								}
-		
-								finalList = newArray(1);
-								finalList = removeZeros(associatedValues, finalList);
-								
-								Array.getStatistics(finalList, asMin, asMax, asMean, asStdDev);
-		
-								if(i1<2) {
-									xAndYPoints[(i1*2)+1] = round(asMean);
-								} else {
-									xAndYPoints[(i1*2)] = round(asMean);
-								}
-							}
+						xAndYPoints = getExtremaCoordinates(cellMaskLoc);
+						//[0] and [1] are highest x with y (rightmost), [2] and [3] are lowest x with y (leftmost), 
+						//[4] and [5] are x and highest y (bottommost) [6] and [7] are x with lowest y (topmost)
+
+						//We're up to here
 						
 							open(storageFoldersArray[4]+"Local region for "+ substring(maskDirFiles[i0], indexOf(maskDirFiles[i0],"Substack")));
 							LRImage = getTitle();

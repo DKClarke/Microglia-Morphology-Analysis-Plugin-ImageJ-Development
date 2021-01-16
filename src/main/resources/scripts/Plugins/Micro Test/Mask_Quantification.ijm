@@ -1,4 +1,243 @@
-function getSkeletonMeasurements(cellMaskLoc) {
+function getWorkingAndStorageDirectories(){
+
+    Dialog.create("Pick Directory");
+    Dialog.addMessage("Choose morphology analysis working directory");
+    Dialog.show();
+
+    setOption("JFileChooser", true);
+    workingDirectory = getDirectory("Choose morphology analysis working directory");
+
+    Dialog.create("Pick Directory");
+    Dialog.addMessage("Choose the image storage directory");
+    Dialog.show();
+    //Get the parent 2P directory i.e. where all the raw 2P images are stored
+    imageStorage = getDirectory("Choose the image storage directory");
+    setOption("JFileChooser", false);
+
+    //Here we create an array to store the full name of the directories we'll be 
+    //working with within our morphology processing directory
+    directories=newArray(workingDirectory+"Input" + File.separator, 
+						workingDirectory+"Output" + File.separator, 
+						workingDirectory+"Done" + File.separator,
+						imageStorage);
+    //[0] is input, [1] is output, [2] is done, [3] is image storage
+
+    directoriesNames = newArray('Input', 'Output', 'Done', 'Image Storage');
+    for (i = 0; i < directories.length; i++) {
+		print('Directories', directoriesNames[i], ':',  directories[i]);
+    }
+
+    images_in_storage = listFilesAndFilesSubDirectories(directories[3], '.tif');
+    if(images_in_storage.length == 0) {
+    	exit('No .tif images in image storage, exiting plugin');
+    }
+
+    return directories;
+}
+
+//Function finds all files that contain "substring" in the path "directoryname" 
+//"fileLocations" is an array that is passed in to fill with paths that contain substring
+function listFilesAndFilesSubDirectories(directoryName, subString) {
+
+	//Get the list of files in the directory
+	listOfFiles = getFileList(directoryName);
+
+	//an array to add onto our fileLocations array to extend it so we can keep adding to it
+	arrayToConcat = newArray(1);
+    fileLocations = newArray(1);
+
+	//Loop through the files in the file list
+	for (i=0; i<listOfFiles.length; i++) {
+
+		//Create a string of the full path name
+		fullPath = directoryName+listOfFiles[i];
+		
+		//If the file we're checking is a file and not a directory and if it  contains the substring we're 
+		//interested in within its full path we check  against the absolute path of our file in lower case on both counts
+		if (File.isDirectory(fullPath)==0 && indexOf(toLowerCase(fullPath), toLowerCase(subString))>-1) {
+			
+			//We store the full path in the output fileLocations at the latest index 
+			//(end of the array) and add an extra bit onto the Array so we can keep filling it
+			fileLocations = Array.concat(fileLocations, arrayToConcat);
+			currentIndex=fileLocations.length-1;
+			fileLocations[currentIndex] = fullPath;
+
+		//If the file we're checking is a directory, then we run the whole thing on that directory
+		} else if (File.isDirectory(fullPath)==1) {
+
+			//Create a new array to fill whilst we run on this directory and at the end add it onyo the fileLocations array 
+			tempArray = listFilesAndFilesSubDirectories(fullPath, subString);
+			fileLocations = Array.concat(fileLocations, tempArray);     
+			
+		}
+	}
+
+	//Create a new array that we fill with all non zero values of fileLocations
+	output = Array.deleteValue(fileLocations, 0);
+
+	//Then return the output array
+	return output;
+	
+}
+
+function getTableColumn(fileLoc, colName) {
+
+	print("Retrieving the column ", colName, " from the table ", File.getName(fileLoc));
+
+	open(fileLoc);
+	tableName = Table.title;
+	selectWindow(tableName);
+
+	columns = Table.headings;
+	if(indexOf(columns, colName) > -1) {
+		outputArray = Table.getColumn(colName);
+	} else {
+		outputArray = newArray(Table.size);
+		Array.fill(outputArray, -1);
+	}
+
+	selectWindow(tableName);
+	run("Close");
+
+	return outputArray;
+
+}
+
+function findFileWithFormat(folder, fileFormat) {
+
+	//We get the list of files in the folder
+	fileList = getFileList(folder);
+	
+	//Create an array to store our locations and a counter for how many files we've found
+	storeIt = newArray(1);
+	storeIt[0] = 'none';
+	count = 0;
+	for(i=0; i<fileList.length; i++) {
+		if(endsWith(toLowerCase(fileList[i]), fileFormat)) {
+			//Create a variable that tells us which file has the format we're looking for
+			fileLocation = folder + fileList[i]; 
+			
+			//If we're onto our second location, create a new array to tack onto storeIt that we then
+			//fill with the new location
+			if(count >0) {
+				appendArray = newArray(1);
+				storeIt = Array.concat(storeIt, appendArray);
+			}
+			
+			//Store the location and increase the count
+			storeIt[count] = fileLocation;
+			count += 1;
+		}
+	}
+
+	if(storeIt[0] == 'none') {
+		exit("No file found");
+	} else {
+		return storeIt;
+	}
+
+}
+
+//This is a function to retrieve the data from the ini file. The ini file contains calibration information for the 
+//entire experiment that we use to calibrate our images. iniFolder is the folder within which the ini file is located, 
+//and iniValues is an array we pass into the function that we fill with calibration values before returning it	
+function getIniData(iniFolder, iniStrings) {
+
+	print("Retrieving .ini data");
+
+	//Find our ini file
+	iniLocations = findFileWithFormat(iniFolder, "ini");
+	if(iniLocations.length > 1) {
+		exit("More than 1 ini file found, exiting plugin");
+	} else {
+		print(".ini file found at", iniLocations[0]);
+		iniToOpen = iniLocations[0];
+	}
+
+	iniValues = parseIniValues(iniStrings, iniToOpen);
+		
+	return iniValues;
+}
+
+function parseIniValues(iniStrings, iniToOpen) {
+		
+	//We open the ini file as a string
+	iniText = File.openAsString(iniToOpen);	
+	
+	iniValues = newArray(iniStrings.length);
+
+	//Looping through the values we want to grab
+	for(i=0; i<iniStrings.length; i++) {
+
+		//We create a start point that is the index of our iniStrings + the length of the string
+		startPoint = indexOf(iniText, iniStrings[i])+lengthOf(iniStrings[i]);
+
+		//Get a substring that starts at our startPoint i.e. where the numbers of our current string start
+		checkString = substring(iniText, startPoint);
+
+		//For each character, if it isn't numeric add 1 to the hitCount and if we hit
+		//two consecutive non-numerics, go back to pull out the values and store them
+		hitCount = 0;
+		for(j=0; j<lengthOf(checkString); j++) {
+			if(charCodeAt(checkString, j) < 48 || charCodeAt(checkString, j) > 57) {
+				hitCount = hitCount + 1;
+				if(hitCount == 2) {
+					realString = substring(checkString, 0, j);
+					break;
+				}
+			}
+		}
+
+		//Parse our values
+		iniValues[i] = parseFloat(realString);
+	}
+
+	return iniValues;
+
+}
+
+
+function substacksToUse(substackTableLoc, nameCol, processedCol, QCCol) {
+
+	print("Retrieving the substacks that are ready for mask generation");
+
+	//We return an array of substack names to use if they have been processed an QAs
+	substackNames = getTableColumn(substackTableLoc, nameCol);
+	processed = getTableColumn(substackTableLoc, processedCol);
+	qaValue = getTableColumn(substackTableLoc, QCCol);
+
+	output = newArray(1);
+	added = 0;
+	for(currSub = 0; currSub<substackNames.length; currSub++) {
+		if(processed[currSub] == 1 && qaValue[currSub] == 1) {
+			if(added == 0) {
+				output[0] = substackNames[currSub];
+			} else {
+				output = Array.concat(output, newArray(substackNames[currSub]));
+			}
+		}
+	}
+
+	return output;
+
+}
+
+function makeDirectories(directories) {
+
+    //Here we make our working directories by looping through our folder names, 
+    //concatenating them to our main parent directory
+    //and making them if they don't already exist
+    for(i=0; i<directories.length; i++) {
+        if(File.exists(directories[i])==0) {
+            File.makeDirectory(directories[i]);
+            print('Made directory ', directories[i]);
+        } else {
+        	print('Directory', directories[i], 'already exists');
+        }
+    }
+}
+
+function getSkeletonMeasurements(cellMaskLoc, skelNames) {
 
 	selectWindow(File.getName(cellMaskLoc));
 	//Skeletonise the image then get out the measures associated with the skelNames array from earlier
@@ -11,7 +250,7 @@ function getSkeletonMeasurements(cellMaskLoc) {
 	//If we're getting out length, we measure the number of pixels in the skeleton
 	storeValues = newArray(skelNames.length);
 	for(currMeasure = 0; currMeasure< skelNames.length; currMeasure++) {
-		if(skelNames.length[currMeasure] != 'SkelArea') {
+		if(skelNames[currMeasure] != 'SkelArea') {
 		storeValues[currMeasure] = getResult(skelNames[currMeasure], 0);
 		} else {
 			selectWindow("For Skeleton");
@@ -82,7 +321,7 @@ function getExtremaCoordinates(cellMaskLoc) {
 	selectWindow(File.getName(cellMaskLoc));
 	run("Create Selection");
 	getSelectionCoordinates(xpoints, ypoints);
-	rim("Select None");
+	run("Select None");
 
 	//This bit is used to calculate the leftmost, rightmost, bottommost, and topmost parts of the mask
 	//We then calculate the average distance between the centre of mass of the mask and these points
@@ -134,6 +373,8 @@ function getCMToExtremaDistances(cellMaskLoc) {
 		distances[extrema] = sqrt((pow(xDistance,2) + pow(yDistance,2)));
 
 		makeLine(centresOfMass[0], centresOfMass[1],  xAndYPoints[(extrema*2)], xAndYPoints[(extrema*2)+1]);
+		setBatchMode("Show");
+		waitForUser("Check line");
 	}
 
 	selectWindow("Cell Spread");
@@ -143,17 +384,23 @@ function getCMToExtremaDistances(cellMaskLoc) {
 
 }
 
+function getSomaArea(somaName) {
+
+	open(somaName);
+	run("Create Selection");
+	List.setMeasurements;
+	somaArea = List.getValue("Area");
+	run("Select None");
+
+	return somaArea;
+
+}
+
 setBatchMode(true);
 
 //Get user input into where our working directory, and image storage directories, reside
 directories = getWorkingAndStorageDirectories();
 //[0] is input, [1] is output, [2] is done (working directories) [3] is directoryName (storage directory)
-
-//Set the path to where we copy our analysed cells to so we can run a fractal analysis on this folder in 
-//batch at a later timepoint - if this directory doesn't exist, make it
-fracLacPath = directories[1]+"fracLac/";
-
-makeDirectories(newArray(fracLacPath));
 
 //Populate our image info arrays
 imagesToUseFile = directories[1] + "Images to Use.csv";
@@ -207,6 +454,11 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 		for(TCSLoops=0; TCSLoops<tcsValue.length; TCSLoops++) {
 
+			//Set the path to where we copy our analysed cells to so we can run a fractal analysis on this folder in 
+			//batch at a later timepoint - if this directory doesn't exist, make it
+			fracLacPath = directories[1]+"fracLac/"+ "TCS"+tcsValue[TCSLoops]+"/";
+			makeDirectories(newArray(fracLacPath));
+
 			if(tcsAnalysed[TCSLoops] == -1) {
 
 				print("Quantifying masks for TCS value of ", tcsValue[TCSLoops]);
@@ -253,25 +505,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 						"# Slab voxels", "Average Branch Length", "# Triple points", "# Quadruple points", 
 						"Maximum Branch Length", "Longest Shortest Path", "SkelArea");
 
-						////////
-						////////
-						////////
-
-						//This code we can paste later on - will be to update the table and relevant column names
-						cellParameterTable = TCSDir + "Cell Parameters.csv";
-
-						//Retrieving the status of each mask we need to generate for the current substack (and TCS)
-						print("Retrieving cell parameters");
-
-						if(File.exists(cellParameterTable) != 1) {
-
-						}
-
-						////////
-						////////
-						////////
-
-						cellFracLacPath = fracLacPath + "TCS"+tcsValue[TCSLoops]+"/" + maskName[currCell];
+						cellFracLacPath = fracLacPath + maskName[currCell];
 							
 						//If we haven't already copied the cell to the fracLac folder, do so
 						if(File.exists(cellFracLacPath) == 0) {
@@ -300,150 +534,47 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 						//Convert our average distance from centre of mass to extrema to calibrated units from our image
 						//though this assumed a square pixel
-						calibratedDisMean = disMean * xPxlSz;
+						calibratedDisMean = disMean * iniValues[0];
 						simpleValues[1] = calibratedDisMean;
-						
 
-						//We're up to here
-				
-							//This is saving an image to show where the lines and centre are
-							selectWindow(LRImage);
-							run("Properties...", "channels="+LRchannels+" slices="+LRslices+" frames="+LRframes+" unit=um pixel_width="+iniTextValuesMicrons[0]+" pixel_height="+iniTextValuesMicrons[1]+" voxel_depth="+iniTextValuesMicrons[2]+"");
-							roiManager("show all without labels");
-							run("Flatten");
-							selectWindow(LRImage);
-							saveAs("tiff", storageFoldersArray[5]+"Extrema for "+ substring(maskDirFiles[i0], indexOf(toLowerCase(maskDirFiles[i0]), "substack")));
-				
-							//Here we open the soma mask for the cell in question, and get its size
-							oldxCoord = parseInt(substring(maskDirFiles[i0], indexOf(maskDirFiles[i0], "x ")+2, indexOf(maskDirFiles[i0], "y")-1));
-							oldyCoord = parseInt(substring(maskDirFiles[i0], indexOf(maskDirFiles[i0], "y ")+2, indexOf(maskDirFiles[i0], ".tif")-1));
-							oldSubstackLoc = substring(maskDirFiles[i0], indexOf(maskDirFiles[i0], "Substack"), indexOf(maskDirFiles[i0], "x"));
-							adjustBy = newArray(0,0);
-							if(File.exists(storageFoldersArray[2]+"Candidate Soma Mask for "+ substring(maskDirFiles[i0], indexOf(toLowerCase(maskDirFiles[i0]), "substack")))==0) {
-								//waitForUser("doesn't exist");
-								for(i1 = 0; i1<somaFiles.length; i1++) {
-									newxCoord = parseInt(substring(somaFiles[i1], indexOf(somaFiles[i1], "x ")+2, indexOf(somaFiles[i1], "y")-1));
-									newyCoord = parseInt(substring(somaFiles[i1], indexOf(somaFiles[i1], "y ")+2, indexOf(somaFiles[i1], ".tif")-1));
-									newsubstackLoc = substring(somaFiles[i1], indexOf(somaFiles[i1], "Substack"), indexOf(somaFiles[i1], "x"));
-									if(abs(oldxCoord-newxCoord) <= 10 && abs(oldyCoord-newyCoord) <= 10 && newsubstackLoc == oldSubstackLoc) {
-										adjustBy[0] = newxCoord-oldxCoord;
-										adjustBy[1] = newyCoord-oldyCoord;
-										//print(maskDirFiles[i0]);
-										//print(somaFiles[i1]);
-										open(storageFoldersArray[2] + somaFiles[i1]);
-									}
-								}
-							} else {
-								open(storageFoldersArray[2]+"Candidate Soma Mask for "+ substring(maskDirFiles[i0], indexOf(toLowerCase(maskDirFiles[i0]), "substack")));
-							}
-							rename("Soma");
-							run("Properties...", "channels="+LRchannels+" slices="+LRslices+" frames="+LRframes+" unit=pixels pixel_width=1 pixel_height=1 voxel_depth=1");
-							run("Create Selection");
-							List.setMeasurements;
+						somaName = directories[1]+imageNameRaw+"/Somas/Soma mask " + substackCoordName;
+						somaArea = getSomaArea(somaName);
+						simpleValues[4] = somaArea;
+
+						//𝐴=𝜋𝑟2
+						//sqrt(A) = PI * r
+						//r = sqrt(A) / PI
+
+						//We then find the centre of mass of the soma, and the radius of the soma (on average)
+						//so that we can use the point and the radius to calculate a sholl analysis on the cell masks
+						//starting from the edge of the soma
+						startradius = sqrt(somaArea) / PI;
 		
-							resultsToGet = newArray("Area", "XM", "YM");
-							resultsToOutput = newArray(3);
-							//[0] is soma area, [1] is xMass, [2] is yMass
-	
-							for(i1=0; i1<3; i1++) {
-								resultsToOutput[i1] = List.getValue(resultsToGet[i1]);
-								//print(resultsToOutput[i1]);
-							}
-	
-							currentMaskValues[5] = resultsToOutput[0];
-				
-							//We then find the centre of mass of the soma, and the radius of the soma (on average)
-							//so that we can use the point and the radius to calculate a sholl analysis on the cell masks
-							//starting from the edge of the soma
-							//startradius=sqrt((currentMaskValues[5]*(iniTextValuesMicrons[1]/PI);
-	
-							startradius=sqrt((currentMaskValues[5]*pow(iniTextValuesMicrons[1], 2))/PI);
-				
-							//Here we run the sholl analysis using the point, the radius, and ending at the ending radius of the local region
-							//We also output all the semi-log, log-log, linear, and linear-norm plots of the number of intersections at various distances
-							//The normalisation is done using the area of the mask
-							//Results are saved in the results folder
-							roiManager("show none");
-		
-							selectWindow(maskDirFiles[i0]);
-							run("Select None");
-							makePoint(resultsToOutput[1]+adjustBy[0], resultsToOutput[2]+adjustBy[1]);
+						selectWindow(File.getName(cellMaskLoc));
+						run("Select None");
+						makePoint(somaCM[1], somaCM[2]);
+						run("Sholl Analysis (From Image)...", "startradius="+startradius+" stepsize="+iniValues[0]+" endradius="+maskWidth+" hemishellchoice=[None. Use full shells] previewshells=false nspans=1.0 nspansintchoice=N/A primarybrancheschoice=[Infer from starting radius] primarybranches=0.0 polynomialchoice=['Best fitting' degree] polynomialdegree=0.0 normalizationmethoddescription=[Automatically choose] normalizerdescription=Area plotoutputdescription=[None. Show no plots] tableoutputdescription=[Summary table] annotationsdescription=[ROIs (Sholl points only)] lutchoice=[No LUT. Use active ROI color] luttable=net.imglib2.display.ColorTable8@643d72c6 save=true savedir="+TCSDir+" analysisaction=[Analyze image]");
 
-							//if(adjustBy[0] != 0 || adjustBy[1] != 0) {
-								//print(resultsToOutput[1], resultsToOutput[2]);
-								//print(adjustBy[0], adjustBy[1]);
-								//setBatchMode("exit and display");
-								//waitForUser("");
-								//setBatchMode(true);
-							//}
-							
-							run("Properties...", "channels="+maskChannels+" slices="+maskSlices+" frames="+maskFrames+" unit=um pixel_width="+iniTextValuesMicrons[0]+" pixel_height="+iniTextValuesMicrons[1]+" voxel_depth="+iniTextValuesMicrons[2]+"");
-							run("Sholl Analysis...", "starting="+startradius+" ending="+LRSize+" radius_step=0 enclosing=1 #_primary=0 infer fit linear polynomial=[Best fitting degree] linear-norm semi-log log-log normalizer=Area create save directory=["+storageFoldersArray[5]+"] do");
+						////////
+						////////
+						////////
 
-							saveAs("Results", storageFoldersArray[5]+substring(maskDirFiles[i0], indexOf(toLowerCase(maskDirFiles[i0]), "substack"), indexOf(maskDirFiles[i0], ".tif")) + ".csv");
-							selectWindow(substring(maskDirFiles[i0], indexOf(toLowerCase(maskDirFiles[i0]), "substack"), indexOf(maskDirFiles[i0], ".tif")) + ".csv");
-							run("Close");
-							run("Clear Results");
-		
-							Housekeeping();
-	
-					
-							//Set the fact we've analysed the cell to 1 (true)
-							currentMaskValues[0] = 1;
+						//This code we can paste later on - will be to update the table and relevant column names
+						cellParameterTable = TCSDir + "Cell Parameters.csv";
 
-							//Concatenate the measured values together, with the info about the cell
-							newValsOne = Array.concat(currentMaskValues, storeValues);
-							toAdd = newArray(substackLoc[i0], imageNames[3], currentLoopValues[0], cellName[i0]);
-							newVals = Array.concat(newValsOne, toAdd);
+						//Retrieving the status of each mask we need to generate for the current substack (and TCS)
+						print("Retrieving cell parameters");
 
-							//Here we update and save our cell parameters table
-							selectWindow("Cell Parameters");
-							for(i1 = 0; i1<tableLabels.length; i1++) {
-								if(i1 == 18 || i1 == 19 || i1 == 21) {
-									stringValue = newVals[i1];
-									Table.set(tableLabels[i1], rowToAdd, stringValue);
-								} else if (i1==1 || i1==2 || i1 == 12 || i1 == 15 || i1 == 16) {
-									numberToStore = newVals[i1] * iniTextValuesMicrons[0];
-									Table.set(tableLabels[i1], rowToAdd, numberToStore);
-								} else if (i1==5 || i1==6 || i1 == 17) {
-									numberToStore = newVals[i1] * pow(iniTextValuesMicrons[0],2);
-									Table.set(tableLabels[i1], rowToAdd, numberToStore);
-								} else {
-									Table.set(tableLabels[i1], rowToAdd, newVals[i1]);
-								}
-							}
-							Table.update;
-							rowToAdd++;
-						
-						}	
-					
-					}	
-	
-					//Indicate that this TCS has been analysed
-					currentLoopValues[3] = 1;
-		
-					//Update and save our TCS analysis table
-					selectWindow("TCS Status");
-					for(i0=0; i0<TCSColumns.length; i0++) {
-						Table.set(TCSColumns[i0], TCSLoops, currentLoopValues[i0]);
+						if(File.exists(cellParameterTable) != 1) {
+
+						}
+
+						////////
+						////////
+						////////
 					}
-	
-					selectWindow("Cell Parameters");
-					Table.update;
-					Table.save(TCSDir+"Cell Parameters.csv");
-					currParam = Table.title;
-					Table.rename(currParam, "Cell Parameters");
-					
 				}
-		
 			}
-
-			selectWindow("TCS Status");
-			Table.save(directories[1]+imageNames[3]+"/TCS Status.csv");
-			currTCSTitle = Table.title;
-			Table.rename(currTCSTitle, "TCS Status");
-			
 		}
 	}
 }
-print("Morphological analysis complete");

@@ -4,6 +4,10 @@ setBatchMode(true);
 directories = getWorkingAndStorageDirectories();
 //[0] is input, [1] is output, [2] is done (working directories) [3] is directoryName (storage directory)
 
+//Set the path to where we copy our analysed cells to so we can run a fractal analysis on this folder in 
+//batch at a later timepoint - if this directory doesn't exist, make it
+fracLacPath = directories[1]+"fracLac/";
+
 //Populate our image info arrays
 imagesToUseFile = directories[1] + "Images to Use.csv";
 
@@ -27,7 +31,7 @@ iniValues =  getIniData(directories[3], iniTextStringsPre);
 //input to determine cell locations and create cell masks
 for (currImage=0; currImage<imageName.length; currImage++) {
 	
-	print("QA'ing masks generated for image ",File.getNameWithoutExtension(imageName[currImage]));
+	print("Quantifying masks generated for image ",File.getNameWithoutExtension(imageName[currImage]));
 
 	imageNameRaw = File.getNameWithoutExtension(imageName[currImage]);
 
@@ -56,9 +60,9 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 		for(TCSLoops=0; TCSLoops<tcsValue.length; TCSLoops++) {
 
-			if(tcsMasksGenerated[TCSLoops] == 1 && tcsQCChecked[TCSLoops] == -1) {
+			if(tcsAnalysed[TCSLoops] == -1) {
 
-				print("QA'ing masks for TCS value of ", tcsValue[TCSLoops]);
+				print("Quantifying masks for TCS value of ", tcsValue[TCSLoops]);
 
 				//This is the directory for the current TCS
 				TCSDir=directories[1]+imageNameRaw+"/"+"TCS"+tcsValue[TCSLoops]+"/";
@@ -75,7 +79,8 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 				maskName = getTableColumn(cellMaskTable, "Mask Name");
 				maskTry = getTableColumn(cellMaskTable, "Mask Try");
 				maskSuccess = getTableColumn(cellMaskTable, "Mask Success");
-                maskQA = getTableColumn(cellMaskTable, "Mask QA");
+				maskQA = getTableColumn(cellMaskTable, "Mask QA");
+				maskQuant = getTableColumn(cellMaskTable, "Mask Quantified");
 
 				//We now loop through all the cells for this given input image
 				for(currCell=0; currCell<maskName.length; currCell++) {
@@ -83,211 +88,49 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 					substackCoordName = substring(maskName[currCell], indexOf(maskName[currCell], 'for'));
 					cellLRLoc = directories[1]+imageNameRaw+"/Local Regions/" + "Local region " + substackCoordName;
 
-
-
-//Set the background color to black otherwise this messes with the clear outside command
-setBackgroundColor(0,0,0);
-	
-//Set the path to where we copy our analysed cells to so we can run a fractal analysis on this folder in 
-//batch at a later timepoint - if this directory doesn't exist, make it
-fracLacPath = directories[1]+"fracLac/";
-
-iniTextValuesMicrons = newArray(5);
-getIniData(directoryName, iniTextValuesMicrons);
-
-if(File.exists(fracLacPath)==0) {
-	File.makeDirectory(fracLacPath);
-}
-
-loopThrough = getFileList(directories[1]);
-
-for(i=0; i<loopThrough.length; i++) {
-
-	proceed = false;
-	if(loopThrough[i] != "Images To Use.csv" && loopThrough[i] != "fracLac/") {
-		proceed = true;
-		imageNames = newArray(4);
-		forUse = File.getName(loopThrough[i]) + ".tif";
-		getAnimalTimepointInfo(imageNames, forUse);	
-	}
-
-	//If a TCS status file exists already
-	if(proceed== true && File.exists(directories[1] + imageNames[3] + "/TCS Status.csv")==1) {
-
-		//Read it in and get whether we've QC'd all TCS vals
-		open(directories[1] + imageNames[3]+"/TCS Status.csv");
-		selectWindow("TCS Status.csv");
-		numberOfLoops = Table.size;
-		print(imageNames[3]);
-
-		//Get out the average value of whether we've analysed each TCS or not (where 1 = true and 0 = false)
-		//so that if our mean value isn't 1, it means we've not analysed all TCS values, else we have
-		selectWindow("TCS Status.csv");
-		aCol = Table.getColumn("Analysed");
-		Array.getStatistics(aCol, aMin, aMax, aMean, aSD);
-		selectWindow("TCS Status.csv");
-		Table.reset("TCS Status.csv");
-		
-		//If we haven't analysed all TCS levels already
-		if(aMean!=1) {
+					if(maskSuccess[currCell] == 1 && maskQA[currCell] == 1 && maskQuant[currCell] == -1) {
 			
-			//Clear results table just to be sure
-			run("Clear Results");
-			
-			//Fill TCS Status table with its existing/previous values
-			TCSColumns = newArray("TCS", "Masks Generated", "QC Checked", "Analysed");
-			TCSValues = newArray(numberOfLoops*TCSColumns.length);
-			
-			//First numberOfLoops indices are TCS, then Masks Generated etc.
-			TCSResultsRefs = newArray(directories[1]+imageNames[3]+"/TCS Status.csv", directories[1]+imageNames[3]+"/TCS Status.csv", 
-										directories[1]+imageNames[3]+"/TCS Status.csv", directories[1]+imageNames[3]+"/TCS Status.csv");
-			TCSResultsAreStrings = newArray(false, false, false, false);
-		
-			fillArray(TCSValues, TCSResultsRefs, TCSColumns, TCSResultsAreStrings, true); 
+                        print("Quantification for: ", maskName[currCell]);
+						print("Cell no.: ", currCell+1, " / ", maskName.length);
 
-			Table.create("TCS Status");
-			selectWindow("TCS Status");
-			for(i0=0; i0<numberOfLoops; i0++) {
-				for(i1=0; i1<TCSColumns.length; i1++) {
-					Table.set(TCSColumns[i1], i0, TCSValues[(numberOfLoops*i1)+i0]);
-				}
-			}
-			
-			//Loop through the number of TCS loops we need to do
-			for(TCSLoops=0; TCSLoops<numberOfLoops; TCSLoops++) {
+						cellMaskLoc = TCSDir + "Cell Masks/" + maskName[currCell];
 		
-				selectWindow("TCS Status");
-				currentLoopValues = newArray(TCSColumns.length);
-				//[0] is TCS, [1] is masks generated, [2] is QC checked, [3] is analysed
+						//oldParams is a list of the parameters we measure using the normal measurements function in
+						//imageJ
+						oldParams = newArray("Analysed", "Perimeter", "Cell Spread", "Eccentricity", 
+													"Roundness", "Soma Size", "Mask Size"); 
 
-				currentLoopValues[0] = Table.get("TCS", TCSLoops);
-		
-				selectWindow("TCS Status");
-				for(i0 = 0; i0<Table.size; i0++) {
-					if(currentLoopValues[0] == Table.get("TCS", i0)) {
-						//Here we fill our currentLoopValues table with the TCSValues data that corresponds to the TCS value
-						//we're current processing - this will be a bunch of zeros if we haven't processed anything before
-						for(i1=0; i1<TCSColumns.length; i1++) {
-							currentLoopValues[i1] = Table.get(TCSColumns[i1], i0);
+						//skelNames is a list of the parameters we measure on a skeletonised image in imageJ
+						skelNames = newArray("# Branches", "# Junctions", "# End-point voxels", "# Junction voxels", 
+						"# Slab voxels", "Average Branch Length", "# Triple points", "# Quadruple points", 
+						"Maximum Branch Length", "Longest Shortest Path", "SkelArea");
+
+						valuesToRecord = Array.concat(oldParams, skelNames);
+
+						////////
+						////////
+						////////
+
+						//This code we can paste later on - will be to update the table and relevant column names
+						cellParameterTable = TCSDir + "Cell Parameters.csv";
+
+						//Retrieving the status of each mask we need to generate for the current substack (and TCS)
+						print("Retrieving cell parameters");
+
+						if(File.exists(cellParameterTable) != 1) {
+
 						}
-						i0 = Table.size;
-					}
-				}
-								
-				if(currentLoopValues[2] == 1 && currentLoopValues[3] == 0) {
 
-					//Set the directory for the current TCS value
-					TCSDir=directories[1]+imageNames[3]+"/"+"TCS"+currentLoopValues[0]+"/";
-			
-					//Store the directories we'll refer to for the listed properties of the cells and fill it
-					storageFoldersArray=newArray(storageFolders.length);
-					//[0] is cell coords, [1] is cell coordinates masks, [2] is somas, [3] is maskDir, [4] is localregion
-					//[5] is results
-					
-					for(i0=0; i0<storageFolders.length; i0++) {
-						if(i0<3) {
-							parentDir=directories[1]+imageNames[3]+"/";	
-						} else {
-							parentDir=TCSDir;	
-						}
-						storageFoldersArray[i0]=parentDir+storageFolders[i0];
-					}
-			
-		
-					//If the results folder doesn't exist yet, make it
-					if(File.exists(storageFoldersArray[5])==false) {
-							File.makeDirectory(storageFoldersArray[5]);
-					}
+						////////
+						////////
+						////////
 
-					somaFiles = getFileList(storageFoldersArray[2]);
-		
-					//Get the list of cell masks present
-					maskDirFiles = getFileList(storageFoldersArray[3]);
-		
-					//oldParams is a list of the parameters we measure using the normal measurements function in
-					//imageJ
-					oldParams = newArray("Analysed", "Perimeter", "Cell Spread", "Eccentricity", 
-												"Roundness", "Soma Size", "Mask Size"); 
-
-					//skelNames is a list of the parameters we measure on a skeletonised image in imageJ
-					skelNames = newArray("# Branches", "# Junctions", "# End-point voxels", "# Junction voxels", 
-					"# Slab voxels", "Average Branch Length", "# Triple points", "# Quadruple points", 
-					"Maximum Branch Length", "Longest Shortest Path", "SkelArea");
-
-					valuesToRecord = Array.concat(oldParams, skelNames);
-		
-					analysisRecordInput = newArray(maskDirFiles.length*valuesToRecord.length);
-					//First maskDirFiles.length indices are "Analysed", then "Keep", etc
-
-					//Fill analysisRecordInput appropriately
-					resultsTableRefs = newArray(valuesToRecord.length);
-					resultsAreStrings = newArray(valuesToRecord.length);
-					for(i0 = 0; i0<valuesToRecord.length; i0++) {
-						resultsTableRefs[i0] = TCSDir + "Cell Parameters.csv";
-						resultsAreStrings[i0] = false;
-					}
-		
-					fillArray(analysisRecordInput, resultsTableRefs, valuesToRecord, resultsAreStrings, true);
-
-					//Fill an array of whether each cell passed the QC control or not
-					imagesKept = newArray(maskDirFiles.length);
-					fillArray(imagesKept, TCSDir+"QC Checked.csv", "Keep", true, false);
-		
-					//Get values for the substack location, experiment (animal and timepoint), as well as the TCS value,
-					//cellName, and whether we used the wrong Objective settings, add these to the analysisRecordInput
-					//array
-					substackLoc = newArray(maskDirFiles.length);
-					for(i0 = 0; i0<substackLoc.length; i0++) {
-						substackLoc[i0] = substring(maskDirFiles[i0], indexOf(toLowerCase(maskDirFiles[i0]), "substack"), indexOf(maskDirFiles[i0], "x")); 
-					}
-					
-					experimentName = newArray(maskDirFiles.length);
-					cellName = newArray(maskDirFiles.length);
-					for(i0=0; i0<maskDirFiles.length; i0++) {
-						experimentName[i0] = imageNames[3];
-						cellName[i0] = substring(maskDirFiles[i0], indexOf(maskDirFiles[i0], "x"), indexOf(maskDirFiles[i0], ".tif")); 
-					}
-					
-					TCSForParameters=newArray(maskDirFiles.length);
-					Array.fill(TCSForParameters, currentLoopValues[0]);
-					//cellName=Array.copy(maskDirFiles);
-					
-					analysisRecordInput = Array.concat(analysisRecordInput, substackLoc);
-					analysisRecordInput = Array.concat(analysisRecordInput, experimentName);
-					analysisRecordInput = Array.concat(analysisRecordInput, TCSForParameters);
-					analysisRecordInput = Array.concat(analysisRecordInput, cellName);
-		
-					//Fill our cell parameters with all this concatenated data and the names for it all
-					toAdd = newArray("Stack Position", "Experiment Name", "TCS", "Cell Name");
-					tableLabels = Array.concat(valuesToRecord, toAdd);
-		
-					Table.create("Cell Parameters");
-					selectWindow("Cell Parameters");
-
-					rowToAdd = 0;
-					
-					//Loop through the input files
-					for(i0=0; i0<maskDirFiles.length; i0++) {
-			
-						currentMaskValues = newArray(7);
-						//[0] is analysed, [1] is perimeter, [2] is cell spread, [3] is eccentricity, [4] is roundness,
-						//[5] is soma size, [6] is mask area
-				
-						//Fill with existing values
-						for(i1=0; i1<currentMaskValues.length; i1++) {
-							currentMaskValues[i1] = analysisRecordInput[(maskDirFiles.length*i1)+i0];
-						}
-		
-						//If we haven't analysed the image yet and we're keeping it (acc. to QC), then we enter here
-
-						if(imagesKept[i0] == 1 && currentMaskValues[0] == 0) {
-
-							print(maskDirFiles[i0]);
+						//We're here
 							
-							//If we haven't already copied the cell to the fracLac folder, do so
-							if(File.exists(fracLacPath + "TCS" + toString(currentLoopValues[0]) +  imageNames[0] + maskDirFiles[i0]) == 0) {
-								File.copy(storageFoldersArray[3] + maskDirFiles[i0], fracLacPath + "TCS" + toString(currentLoopValues[0]) +  imageNames[0] + maskDirFiles[i0]);
-							}
+						//If we haven't already copied the cell to the fracLac folder, do so
+						if(File.exists(fracLacPath + "TCS" + toString(currentLoopValues[0]) +  imageNames[0] + maskDirFiles[i0]) == 0) {
+							File.copy(storageFoldersArray[3] + maskDirFiles[i0], fracLacPath + "TCS" + toString(currentLoopValues[0]) +  imageNames[0] + maskDirFiles[i0]);
+						}
 							
 							//Get out our skeleton values
 							open(storageFoldersArray[3] + maskDirFiles[i0]);

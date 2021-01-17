@@ -1,18 +1,27 @@
 #@LogService log
 
+'''
+Based on https://github.com/morphonets/SNT/blob/master/src/main/resources/script_templates/Neuroanatomy/Analysis/Sholl_Extensive_Stats_Demo.groovy
+and https://github.com/morphonets/SNT/blob/master/src/main/resources/script_templates/Neuroanatomy/Analysis/Sholl_Extract_Profile_From_Image_Demo.py
+and https://gist.github.com/GenevieveBuckley/d9a7238b47d501063a3ddd782067b151 (for writing to csv)
+
+API for LinearProfileStats = https://javadoc.scijava.org/Fiji/sc/fiji/snt/analysis/sholl/math/LinearProfileStats.html#getKStestOfFit--
+for Normalised stats = https://javadoc.scijava.org/Fiji/index.html?sc/fiji/snt/package-summary.html
+'''
+
 from ij import IJ
 from ij.measure import Calibration
 from sc.fiji.snt import Tree
-from sc.fiji.snt.analysis.sholl import *
-from sc.fiji.snt.analysis.sholl.gui import *
+from sc.fiji.snt.analysis.sholl import (Profile, ShollUtils)
+from sc.fiji.snt.analysis.sholl.gui import ShollPlot
 from sc.fiji.snt.analysis.sholl.math import LinearProfileStats
 from sc.fiji.snt.analysis.sholl.math import NormalizedProfileStats
 from sc.fiji.snt.analysis.sholl.math import ShollStats
-from sc.fiji.snt.analysis.sholl.parsers import *
+from sc.fiji.snt.analysis.sholl.parsers import (ImageParser2D, ImageParser3D)
 import os
 import csv
 
-def main(imp, startRad, stepSize):
+def main(imp, startRad, stepSize, saveLoc, maskName, tcsVal):
 
     # We may want to set specific options depending on whether we are parsing a
     # 2D or a 3D image. If the image has multiple channels/time points, we set
@@ -54,44 +63,66 @@ def main(imp, startRad, stepSize):
         log.error("All intersection counts were zero! Invalid threshold range!?")
         return
 
+    # Remove zeros here as otherwise this messes with polynomial fitting functions
+    profile.trimZeroCounts()
+
+    # Calculate the best fit polynomial
     lStats = LinearProfileStats(profile)
 
-    bestDegree2 = lStats.findBestFit(0, # lowest degree
-                        30,     # highest degree
-                        0.70,   # lowest value for adjusted RSquared
-                        0.05)   # the two-sample K-S p-value used to discard 'unsuitable fits'
-    print("The automated 'Best polynomial': " + str(bestDegree2))
+    #plot = ShollPlot(lStats)
+    #plot.show()
 
+    # Fit out polynomial
+    #plot.rebuild()
+
+    # Calculate stats from our area normalised semi-log and log-log profiles (128 is semi-log and 256 is log-log)
     nStatsSemiLog = NormalizedProfileStats(profile, ShollStats.AREA, 128)
     nStatsLogLog = NormalizedProfileStats(profile, ShollStats.AREA, 256)
 
+    if NormalizedProfileStats(profile, ShollStats.AREA).getMethodFlag('Semi-log') != 128:
+        print(str(NormalizedProfileStats(profile, ShollStats.AREA).getMethodFlag('Semi-log')))
+        print('Problem with method flag for Semi-log')
+        return
+
+    if NormalizedProfileStats(profile, ShollStats.AREA).getMethodFlag('Log-log') != 256:
+        print(str(NormalizedProfileStats(profile, ShollStats.AREA).getMethodFlag('Log-log')))
+        print('Problem with method flag for Log-log')
+        return
+
+
+    # Get our image calibration and use it to extract the critical values and radii
     cal = Calibration(imp)
 
-    maskMetrics = {'Primary Branches': lStats.getPrimaryBranches(False),
+    # Store all our metrics in a dictionary
+    maskMetrics = {'Mask Name': maskName,
+        'TCS Value': tcsVal,
+        'Primary Branches': lStats.getPrimaryBranches(False),
         'Intersecting Radii': lStats.getIntersectingRadii(False),
         'Sum of Intersections': lStats.getSum(False),
         'Mean of Intersections': lStats.getMean(False),
         'Median of Intersections': lStats.getMedian(False),
         'Skewness (sampled)': lStats.getSkewness(False),
-        'Skewness (fit)': lStats.getSkewness(True) if bestDegree2 != -1 else 'NaN',
         'Kurtosis (sampled)': lStats.getKurtosis(False),
-        'Kurtosis (fit)': lStats.getKurtosis(True) if bestDegree2 != -1 else 'NaN',
+        'Kurtosis (fit)': 'NaN',
         'Maximum Number of Intersections': lStats.getMax(False),
-        'Max Intersection Radius': lStats.getIndexOfInters(False, float(lStats.getMax(False))),
+        'Max Intersection Radius': lStats.getXvalues()[lStats.getIndexOfInters(False, float(lStats.getMax(False)))],
         'Ramification Index (sampled)': lStats.getRamificationIndex(False),
-        'Ramification Index (fit)': lStats.getRamificationIndex(True) if bestDegree2 != -1 else 'NaN',
+        'Ramification Index (fit)': 'NaN',
         'Centroid Radius': lStats.getCentroid(False).rawX(cal),
         'Centroid Value': lStats.getCentroid(False).rawY(cal),
         'Enclosing Radius': lStats.getEnclosingRadius(False),
-        'Critical Radius': lStats.getPolynomialMaxima(0.0, 1.0, 0.5).rawX(cal) if bestDegree2 != -1 else 'Nan',
-        'Mean Value': lStats.getMean(True) if bestDegree2 != -1 else 'NaN',
-        'Polynomial Degree': bestDegree2 if bestDegree2 != -1 else 'Nan',
+        'Critical Value': 'NaN',
+        'Critical Radius': 'NaN',
+        'Mean Value': 'NaN',
+        'Polynomial Degree': 'NaN',
         'Regression Coefficient (semi-log)': nStatsSemiLog.getSlope(),
         'Regression Coefficient (Log-log)': nStatsLogLog.getSlope(),
         'Regression Intercept (semi-log)': nStatsSemiLog.getIntercept(),
         'Regression Intercept (Log-log)': nStatsLogLog.getIntercept()
         }
 
+
+    # Get our P10-90 metrics
     nStatsSemiLog.restrictRegToPercentile(10, 90)
     nStatsLogLog.restrictRegToPercentile(10, 90)
 
@@ -101,10 +132,43 @@ def main(imp, startRad, stepSize):
         'Regression Intercept (Log-log)[P10-P90]': nStatsLogLog.getIntercept()
         }
 
-    maskMetrics.update(maskPercMetrics)
+    maskMetrics.update(maskPercMetrics)    
 
-    csv_filename = os.path.join(str('/Users/devin.clarke/Desktop/'), 'csv_filename.csv')
-    with open(csv_filename, 'wb') as f:
+    # Save our file
+    with open(saveLoc, 'wb') as f:
+        writer = csv.writer(f)
+        writer.writerow(list(maskMetrics.keys()))
+        writer.writerow(list(maskMetrics.values()))
+
+    '''
+    Putting this bit about polynomial fitting down here as the following function sometimes throws an exception and this way
+    we at least have some data written and placeholders NaNs if it does
+    '''
+
+    # Get the best fitting polynomial degree between 1 and 30
+    bestDegree = lStats.findBestFit(1, # lowest degree
+                            30,     # highest degree
+                            0.7,   # lowest value for adjusted RSquared
+                            0.05)   # the two-sample K-S p-value used to discard 'unsuitable fits'
+
+    if(bestDegree != -1):
+        lStats.fitPolynomial(bestDegree)
+        trial = lStats.getPolynomialMaxima(0.0, 100.0, 50.0)
+        critVals = list()
+        critRadii = list()
+        for curr in trial.toArray():
+            critVals.append(curr.rawY(cal))
+            critRadii.append(curr.rawX(cal))
+
+    maskMetrics['Kurtosis (fit)'] =  lStats.getKurtosis(True) if bestDegree != -1 else 'NaN'
+    maskMetrics['Ramification Index (fit)'] = lStats.getRamificationIndex(True) if bestDegree != -1 else 'NaN'
+    maskMetrics['Critical Value'] =  sum(critVals) / len(critVals)  if bestDegree != -1 else 'Nan'
+    maskMetrics['Critical Radius'] =  sum(critRadii) / len(critRadii)  if bestDegree != -1 else 'Nan'
+    maskMetrics['Mean Value'] =  lStats.getMean(True) if bestDegree != -1 else 'NaN'
+    maskMetrics['Polynomial Degree'] =  bestDegree if bestDegree != -1 else 'Nan'
+
+    # Save our file
+    with open(saveLoc, 'wb') as f:
         writer = csv.writer(f)
         writer.writerow(list(maskMetrics.keys()))
         writer.writerow(list(maskMetrics.values()))
@@ -112,11 +176,12 @@ def main(imp, startRad, stepSize):
 
 # For this demo we are going to use the ddaC sample image
 args = getArgument()
-#d = dict(x.split("=") for x in args.split(","))
-d = [x.split("=") for x in args.split(",")]
-arg_dict = dict(d)
-startRad = float(arg_dict[arg_dict.keys()[0]])
-stepSize = float(arg_dict[arg_dict.keys()[1]])
+arg_dict = dict([x.split("=") for x in args.split(",")])
+startRad = float(arg_dict['startRad'])
+stepSize = float(arg_dict['stepSize'])
+saveLoc = str(arg_dict['saveLoc'])
+maskName = str(arg_dict['maskName'])
+tcsVal = str(arg_dict['tcsVal'])
 
 imp = IJ.getImage()
-main(imp, startRad, stepSize)
+main(imp, startRad, stepSize, saveLoc, maskName, tcsVal)

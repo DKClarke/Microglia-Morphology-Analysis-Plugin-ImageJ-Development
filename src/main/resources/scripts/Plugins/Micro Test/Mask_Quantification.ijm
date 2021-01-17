@@ -377,7 +377,7 @@ function getCMToExtremaDistances(cellMaskLoc) {
 		makeLine(centresOfMass[0], centresOfMass[1],  xAndYPoints[(extrema*2)], xAndYPoints[(extrema*2)+1]);
 		Roi.setStrokeColor('red');
 		setBatchMode("Show");
-		waitForUser("Check line");
+		//waitForUser("Check line");
 	}
 
 	selectWindow("Cell Spread");
@@ -400,6 +400,10 @@ function getSomaArea(somaName) {
 }
 
 setBatchMode(true);
+
+//setOption("JFileChooser", true);
+//pyFileLoc = getDirectory("Select the Directory where the .py file is saved");
+
 
 //Get user input into where our working directory, and image storage directories, reside
 directories = getWorkingAndStorageDirectories();
@@ -566,14 +570,11 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 						run("Select None");
 						makePoint(somaCM[0], somaCM[1]);
 
-						wd = File.directory;
-						pyFileLocation = File.getParent(File.getParent(wd)) + "/Accessory Scripts/Sholl_Analysis_Script.py";
+						//Need to change this so that users will also have to download a .py file and save this in plugins as well?
+						pyFileLocation = '/Users/devin.clarke/Documents/GitHub/ImageJMicroMorphJarTest/src/main/resources/scripts/Accessory Scripts/Sholl_Analysis_Script.py';
 						pythonText = File.openAsString(pyFileLocation); 
-						
-						call("ij.plugin.Macro_Runner.runPython", pythonText, "startRad = "+startRad+", stepSize = "+iniValues[0]+"");
-
-						run("Sholl Analysis (From Image)...", "startradius="+startradius+" stepsize="+iniValues[0]+" endradius="+maskWidth+" hemishellchoice=[None. Use full shells] previewshells=false nspans=1.0 nspansintchoice=N/A primarybrancheschoice=[Infer from starting radius] primarybranches=0.0 polynomialchoice=['Best fitting' degree] polynomialdegree=0.0 normalizationmethoddescription=[Automatically choose] normalizerdescription=Area plotoutputdescription=[None. Show no plots] tableoutputdescription=[Summary table] annotationsdescription=[ROIs (Sholl points only)] lutchoice=[No LUT. Use active ROI color] luttable=net.imglib2.display.ColorTable8@643d72c6 save=true savedir="+TCSDir+" analysisaction=[Analyze image]");
-
+						saveShollAs = TCSDir + "Sholl " + File.getNameWithoutExtension(maskName[currCell]) + ".csv";
+						call("ij.plugin.Macro_Runner.runPython", pythonText, "startRad="+startradius+",stepSize="+iniValues[0]+",saveLoc="+saveShollAs+",maskName="+maskName[currCell]+",tcsVal="+tcsValue[TCSLoops]+"");
 						////////
 						////////
 						////////

@@ -341,14 +341,14 @@ function getExtremaCoordinates(cellMaskLoc) {
 	//[0] and [1] are highest x with y (rightmost), [2] and [3] are lowest x with y (leftmost), 
 	//[4] and [5] are x and highest y (bottommost) [6] and [7] are x with lowest y (topmost)
 
-	return xAndYPoints
+	return xAndYPoints;
 
 }
 
 function getCMToExtremaDistances(cellMaskLoc) {
 
 	selectWindow(File.getName(cellMaskLoc));
-	run("Duplicate");
+	run("Duplicate...", " ");
 	rename("Cell Spread");
 	run("Properties...", "channels=1 slices=1 frames=1 unit=pixels pixel_width=1 pixel_height=1 voxel_depth=1");
 	List.setMeasurements;
@@ -363,6 +363,8 @@ function getCMToExtremaDistances(cellMaskLoc) {
 	distances = newArray(4);
 	//[0] is distance to the right, [1] is to the left, [2] is the top, [3] is the bottom
 
+	Array.show(xAndYPoints);
+
 	for(extrema=0; extrema<4; extrema++) {
 		xToCheck = xAndYPoints[(extrema*2)];
 		yToCheck = xAndYPoints[(extrema*2)+1];
@@ -373,6 +375,7 @@ function getCMToExtremaDistances(cellMaskLoc) {
 		distances[extrema] = sqrt((pow(xDistance,2) + pow(yDistance,2)));
 
 		makeLine(centresOfMass[0], centresOfMass[1],  xAndYPoints[(extrema*2)], xAndYPoints[(extrema*2)+1]);
+		Roi.setStrokeColor('red');
 		setBatchMode("Show");
 		waitForUser("Check line");
 	}
@@ -541,6 +544,15 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 						somaArea = getSomaArea(somaName);
 						simpleValues[4] = somaArea;
 
+						selectWindow(File.getName(somaName));
+						List.setMeasurements;
+
+						resultsStrings = newArray("XM", "YM");
+						somaCM = newArray(2);
+					
+						for(cmCoord=0; cmCoord<resultsStrings.length; cmCoord++) {
+							somaCM[cmCoord] = List.getValue(resultsStrings[cmCoord]);
+						}
 						//𝐴=𝜋𝑟2
 						//sqrt(A) = PI * r
 						//r = sqrt(A) / PI
@@ -552,7 +564,14 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 		
 						selectWindow(File.getName(cellMaskLoc));
 						run("Select None");
-						makePoint(somaCM[1], somaCM[2]);
+						makePoint(somaCM[0], somaCM[1]);
+
+						wd = File.directory;
+						pyFileLocation = File.getParent(File.getParent(wd)) + "/Accessory Scripts/Sholl_Analysis_Script.py";
+						pythonText = File.openAsString(pyFileLocation); 
+						
+						call("ij.plugin.Macro_Runner.runPython", pythonText, "startRad = "+startRad+", stepSize = "+iniValues[0]+"");
+
 						run("Sholl Analysis (From Image)...", "startradius="+startradius+" stepsize="+iniValues[0]+" endradius="+maskWidth+" hemishellchoice=[None. Use full shells] previewshells=false nspans=1.0 nspansintchoice=N/A primarybrancheschoice=[Infer from starting radius] primarybranches=0.0 polynomialchoice=['Best fitting' degree] polynomialdegree=0.0 normalizationmethoddescription=[Automatically choose] normalizerdescription=Area plotoutputdescription=[None. Show no plots] tableoutputdescription=[Summary table] annotationsdescription=[ROIs (Sholl points only)] lutchoice=[No LUT. Use active ROI color] luttable=net.imglib2.display.ColorTable8@643d72c6 save=true savedir="+TCSDir+" analysisaction=[Analyze image]");
 
 						////////

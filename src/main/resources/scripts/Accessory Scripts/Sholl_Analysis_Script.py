@@ -1,6 +1,7 @@
 #@LogService log
 
 from ij import IJ
+from ij.measure import Calibration
 from sc.fiji.snt import Tree
 from sc.fiji.snt.analysis.sholl import *
 from sc.fiji.snt.analysis.sholl.gui import *
@@ -56,89 +57,57 @@ def main(imp, startRad, stepSize):
     lStats = LinearProfileStats(profile)
 
     bestDegree2 = lStats.findBestFit(0, # lowest degree
-                            30,     # highest degree
-                            0.70,   # lowest value for adjusted RSquared
-                            0.05)   # the two-sample K-S p-value used to discard 'unsuitable fits'
+                        30,     # highest degree
+                        0.70,   # lowest value for adjusted RSquared
+                        0.05)   # the two-sample K-S p-value used to discard 'unsuitable fits'
     print("The automated 'Best polynomial': " + str(bestDegree2))
 
-    dataTypeDict = {'Sampled': False, 'Fitted': True}
+    nStatsSemiLog = NormalizedProfileStats(profile, ShollStats.AREA, 128)
+    nStatsLogLog = NormalizedProfileStats(profile, ShollStats.AREA, 256)
 
-    dfColsList = ['Min', 'Max', 'Mean', 'Median', 'Sum', 'Variance', 'Sum squared', 'Intersect. radii', 
-        'I branches', 'Ramification index', 'Centroid', 'Centroid (polygon)', 'Enclosing radius', 'Maxima', 
-        'Centered maximum', 'Kurtosis', 'Skewness']
+    cal = Calibration(imp)
 
-    allDfCols = list()
-    allDfData = list()
-    for analysisTypeName in dataTypeDict:
-        analysisType = dataTypeDict[analysisTypeName]
-        do = False
-        if analysisType == False or (analysisType == True and str(bestDegree2) != '-1'):
-            print("  Min (" + analysisTypeName + ") = " + str(lStats.getMin(analysisType)))
-            print("  Max (" + analysisTypeName + ") = " + str(lStats.getMax(analysisType)))
-            print("  Mean (" + analysisTypeName + ") = " + str(lStats.getMean(analysisType)))
-            print("  Median (" + analysisTypeName + ") = " + str(lStats.getMedian(analysisType)))
-            print("  Sum (" + analysisTypeName + ") = " + str(lStats.getSum(analysisType)))
-            print("  Variance (" + analysisTypeName + ") = " + str(lStats.getVariance(analysisType)))
-            print("  Sum squared (" + analysisTypeName + ") = " + str(lStats.getSumSq(analysisType)))
-            print("  Intersect. radii (" + analysisTypeName + ") = " + str(lStats.getIntersectingRadii(analysisType)))
-            print("  I branches (" + analysisTypeName + ") = " + str(lStats.getPrimaryBranches(analysisType)))
-            print("  Ramification index (" + analysisTypeName + ") = " + str(lStats.getRamificationIndex(analysisType)))
-            print("  Centroid (" + analysisTypeName + ") = " + str(lStats.getCentroid(analysisType)))
-            print("  Centroid (polygon) (" + analysisTypeName + ") = " + str(lStats.getPolygonCentroid(analysisType)))
-            print("  Enclosing radius (" + analysisTypeName + ") = " + str(lStats.getEnclosingRadius(analysisType, 1)))
-            print("  Maxima (" + analysisTypeName + ") = " + str(lStats.getMaxima(analysisType)))
-            print("  Centered maximum (" + analysisTypeName + ") = " + str(lStats.getCenteredMaximum(analysisType)))
-            print("  Kurtosis (" + analysisTypeName + ") = " + str(lStats.getKurtosis(analysisType)))
-            print("  Skewness (" + analysisTypeName + ") = " + str(lStats.getSkewness(analysisType)))
+    maskMetrics = {'Primary Branches': lStats.getPrimaryBranches(False),
+        'Intersecting Radii': lStats.getIntersectingRadii(False),
+        'Sum of Intersections': lStats.getSum(False),
+        'Mean of Intersections': lStats.getMean(False),
+        'Median of Intersections': lStats.getMedian(False),
+        'Skewness (sampled)': lStats.getSkewness(False),
+        'Skewness (fit)': lStats.getSkewness(True) if bestDegree2 != -1 else 'NaN',
+        'Kurtosis (sampled)': lStats.getKurtosis(False),
+        'Kurtosis (fit)': lStats.getKurtosis(True) if bestDegree2 != -1 else 'NaN',
+        'Maximum Number of Intersections': lStats.getMax(False),
+        'Max Intersection Radius': lStats.getIndexOfInters(False, float(lStats.getMax(False))),
+        'Ramification Index (sampled)': lStats.getRamificationIndex(False),
+        'Ramification Index (fit)': lStats.getRamificationIndex(True) if bestDegree2 != -1 else 'NaN',
+        'Centroid Radius': lStats.getCentroid(False).rawX(cal),
+        'Centroid Value': lStats.getCentroid(False).rawY(cal),
+        'Enclosing Radius': lStats.getEnclosingRadius(False),
+        'Critical Radius': lStats.getPolynomialMaxima(0.0, 1.0, 0.5).rawX(cal) if bestDegree2 != -1 else 'Nan',
+        'Mean Value': lStats.getMean(True) if bestDegree2 != -1 else 'NaN',
+        'Polynomial Degree': bestDegree2 if bestDegree2 != -1 else 'Nan',
+        'Regression Coefficient (semi-log)': nStatsSemiLog.getSlope(),
+        'Regression Coefficient (Log-log)': nStatsLogLog.getSlope(),
+        'Regression Intercept (semi-log)': nStatsSemiLog.getIntercept(),
+        'Regression Intercept (Log-log)': nStatsLogLog.getIntercept()
+        }
 
-            dfValsList = [lStats.getMin(analysisType), lStats.getMax(analysisType), lStats.getMean(analysisType), 
-                lStats.getMedian(analysisType), lStats.getSum(analysisType), lStats.getVariance(analysisType), 
-                lStats.getSumSq(analysisType), lStats.getIntersectingRadii(analysisType), lStats.getPrimaryBranches(analysisType), 
-                lStats.getRamificationIndex(analysisType),lStats.getCentroid(analysisType), lStats.getPolygonCentroid(analysisType),
-                lStats.getEnclosingRadius(analysisType, 1), lStats.getMaxima(analysisType), lStats.getCenteredMaximum(analysisType),
-                lStats.getKurtosis(analysisType), lStats.getSkewness(analysisType)]
+    nStatsSemiLog.restrictRegToPercentile(10, 90)
+    nStatsLogLog.restrictRegToPercentile(10, 90)
 
-        else:
+    maskPercMetrics = {'Regression Coefficient (semi-log)[P10-P90]': nStatsSemiLog.getSlope(),
+        'Regression Coefficient (Log-log)[P10-P90]': nStatsLogLog.getSlope(),
+        'Regression Intercept (Semi-log)[P10-P90]': nStatsSemiLog.getIntercept(),
+        'Regression Intercept (Log-log)[P10-P90]': nStatsLogLog.getIntercept()
+        }
 
-            dfValsList = ['NA' for col in dfColsList]
-
-        thisColsList = [col + " (" + analysisTypeName + ")" for col in dfColsList]
-        allDfCols = allDfCols + thisColsList
-        allDfData = allDfData + dfValsList
+    maskMetrics.update(maskPercMetrics)
 
     csv_filename = os.path.join(str('/Users/devin.clarke/Desktop/'), 'csv_filename.csv')
     with open(csv_filename, 'wb') as f:
-                writer = csv.writer(f)
-                writer.writerow(allDfCols)
-                writer.writerow(allDfData)
-
-
-    # Determine Sholl decay using area as a normalizer. The choice between
-    # log-log or semi-log method is automatically made by the program
-    nStats = NormalizedProfileStats(profile, ShollStats.AREA)
-
-    print("Chosen method: " + str(nStats.getMethodDescription()))
-    print( "Sholl decay: " + str(nStats.getShollDecay()))
-    print( "Determination ratio: " + str(nStats.getDeterminationRatio()))
-
-    dataSubset = [[10,90]]
-
-    for it in dataSubset:
-        nStats.restrictRegToPercentile(it[0], it[1])
-        print('R^2 P' + str(it) + ": " + str(nStats.getRSquaredOfFit()))
-        nStats.resetRegression()
-
-
-    # We can now access all the measured data stored in 'profile': Let's display
-    # the sampling shells and the detected sites of intersections (NB: If the
-    # image already has an overlay, it will be cleared):
-    #profile.getROIs(imp)
-    
-    # For now, lets's perform a minor cleanup of the data and plot it without
-    # doing any polynomial regression. Have a look at Sholl_Extensive_Stats_Demo
-    # script for details on how to analyze profiles with detailed granularity
-    #profile.trimZeroCounts()
-    #profile.plot().show()
+        writer = csv.writer(f)
+        writer.writerow(list(maskMetrics.keys()))
+        writer.writerow(list(maskMetrics.values()))
     
 
 # For this demo we are going to use the ddaC sample image

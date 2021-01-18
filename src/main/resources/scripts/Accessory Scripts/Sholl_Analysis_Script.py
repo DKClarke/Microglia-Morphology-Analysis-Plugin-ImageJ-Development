@@ -21,7 +21,7 @@ from sc.fiji.snt.analysis.sholl.parsers import (ImageParser2D, ImageParser3D)
 import os
 import csv
 
-def main(imp, startRad, stepSize, saveLoc, maskName, tcsVal):
+def main(imp, startRad, stepSize, saveLoc, maskName, cellName, tcsVal):
 
     # We may want to set specific options depending on whether we are parsing a
     # 2D or a 3D image. If the image has multiple channels/time points, we set
@@ -55,7 +55,9 @@ def main(imp, startRad, stepSize, saveLoc, maskName, tcsVal):
 
     # We can e.g., access the 'Sholl mask', a synthetic image in which foreground
     # pixels have been assigned the no. of intersections:
-    #parser.getMask().show()
+    maskImage = parser.getMask()
+    maskLoc = saveLoc + "Sholl Mask " + cellName + ".tif"
+    IJ.save(maskImage, maskLoc)
 
     # Now we can access the Sholl profile:
     profile = parser.getProfile()
@@ -134,8 +136,18 @@ def main(imp, startRad, stepSize, saveLoc, maskName, tcsVal):
 
     maskMetrics.update(maskPercMetrics)    
 
+    plotSL = ShollPlot(nStatsSemiLog).getImagePlus()
+    plotLL = ShollPlot(nStatsLogLog).getImagePlus()
+
+    plotSLLoc = saveLoc + "Sholl SL " + cellName + ".tif"
+    plotLLLoc = saveLoc + "Sholl LL " + cellName + ".tif"
+
+    IJ.save(plotSL, plotSLLoc)
+    IJ.save(plotLL, plotLLLoc)
+
     # Save our file
-    with open(saveLoc, 'wb') as f:
+    writeResultsLoc = saveLoc + "Sholl " + cellName + ".csv"
+    with open(writeResultsLoc, 'wb') as f:
         writer = csv.writer(f)
         writer.writerow(list(maskMetrics.keys()))
         writer.writerow(list(maskMetrics.values()))
@@ -160,6 +172,12 @@ def main(imp, startRad, stepSize, saveLoc, maskName, tcsVal):
             critVals.append(curr.rawY(cal))
             critRadii.append(curr.rawX(cal))
 
+    plotFit = ShollPlot(lStats).getImagePlus()
+
+    plotFitLoc = saveLoc + "Sholl Fit " + cellName + ".tif"
+
+    IJ.save(plotFit, plotFitLoc)
+
     maskMetrics['Kurtosis (fit)'] =  lStats.getKurtosis(True) if bestDegree != -1 else 'NaN'
     maskMetrics['Ramification Index (fit)'] = lStats.getRamificationIndex(True) if bestDegree != -1 else 'NaN'
     maskMetrics['Critical Value'] =  sum(critVals) / len(critVals)  if bestDegree != -1 else 'Nan'
@@ -168,7 +186,7 @@ def main(imp, startRad, stepSize, saveLoc, maskName, tcsVal):
     maskMetrics['Polynomial Degree'] =  bestDegree if bestDegree != -1 else 'Nan'
 
     # Save our file
-    with open(saveLoc, 'wb') as f:
+    with open(writeResultsLoc, 'wb') as f:
         writer = csv.writer(f)
         writer.writerow(list(maskMetrics.keys()))
         writer.writerow(list(maskMetrics.values()))
@@ -183,5 +201,7 @@ saveLoc = str(arg_dict['saveLoc'])
 maskName = str(arg_dict['maskName'])
 tcsVal = str(arg_dict['tcsVal'])
 
+cellName = os.path.splitext(maskName)[0]
+
 imp = IJ.getImage()
-main(imp, startRad, stepSize, saveLoc, maskName, tcsVal)
+main(imp, startRad, stepSize, saveLoc, maskName, cellName, tcsVal)

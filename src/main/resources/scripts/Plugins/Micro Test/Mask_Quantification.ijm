@@ -237,6 +237,16 @@ function makeDirectories(directories) {
     }
 }
 
+function saveAndCloseImage(cellMaskLoc, TCSDir, prefix, Image) {
+	
+	saveLoc = TCSDir + "Results/" + prefix + File.getName(cellMaskLoc);
+	selectWindow(Image);
+	saveAs("tiff", saveLoc);
+	selectWindow(File.getName(saveLoc));
+	run("Close");
+
+}
+
 function getSkeletonMeasurements(cellMaskLoc, skelNames) {
 
 	selectWindow(File.getName(cellMaskLoc));
@@ -264,7 +274,7 @@ function getSkeletonMeasurements(cellMaskLoc, skelNames) {
 	run("Clear Results");
 
 	//Close images we don't need anymore
-	toClose = newArray("Longest shortest paths", "Tagged skeleton", "For Skeleton");
+	toClose = newArray("Longest shortest paths", "Tagged skeleton");
 	for(closeImage = 0; closeImage< toClose.length; closeImage++) {
 		if(isOpen(toClose[closeImage])==1) {
 		selectWindow(toClose[closeImage]);
@@ -363,7 +373,7 @@ function getCMToExtremaDistances(cellMaskLoc) {
 	distances = newArray(4);
 	//[0] is distance to the right, [1] is to the left, [2] is the top, [3] is the bottom
 
-	Array.show(xAndYPoints);
+	makePoint(centresOfMass[0], centresOfMass[1], 'medium red dot add');
 
 	for(extrema=0; extrema<4; extrema++) {
 		xToCheck = xAndYPoints[(extrema*2)];
@@ -374,14 +384,11 @@ function getCMToExtremaDistances(cellMaskLoc) {
 
 		distances[extrema] = sqrt((pow(xDistance,2) + pow(yDistance,2)));
 
+		makePoint(xAndYPoints[(extrema*2)], xAndYPoints[(extrema*2)+1], 'medium red dot add');
 		makeLine(centresOfMass[0], centresOfMass[1],  xAndYPoints[(extrema*2)], xAndYPoints[(extrema*2)+1]);
 		Roi.setStrokeColor('red');
-		setBatchMode("Show");
-		//waitForUser("Check line");
+		run("Add Selection...");
 	}
-
-	selectWindow("Cell Spread");
-	run("Close");
 
 	return distances;
 
@@ -390,6 +397,7 @@ function getCMToExtremaDistances(cellMaskLoc) {
 function getSomaArea(somaName) {
 
 	open(somaName);
+	run("Properties...", "channels=1 slices=1 frames=1 unit=pixels pixel_width=1 pixel_height=1 voxel_depth=1");
 	run("Create Selection");
 	List.setMeasurements;
 	somaArea = List.getValue("Area");
@@ -473,6 +481,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 				//This is the directory for the current TCS
 				TCSDir=directories[1]+imageNameRaw+"/"+"TCS"+tcsValue[TCSLoops]+"/";
 				TCSMasks = TCSDir + "Cell Masks/";
+				makeDirectories(newArray(TCSDir + "Results/"));
 
                 cellMaskTable = TCSDir + "Substack (" + substackNames[currSubstack] + ") Mask Generation.csv";
                 
@@ -528,6 +537,8 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 						
 						skelValues = getSkeletonMeasurements(cellMaskLoc, skelParams);
 
+						saveAndCloseImage(cellMaskLoc, TCSDir, 'Skeleton ', 'For Skeleton');
+
 						simpleValues = getSimpleMeasurements(cellMaskLoc,simpleValues);
 
 						xAndYPoints = getExtremaCoordinates(cellMaskLoc);
@@ -535,6 +546,8 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 						//[4] and [5] are x and highest y (bottommost) [6] and [7] are x with lowest y (topmost)
 
 						distances = getCMToExtremaDistances(cellMaskLoc);
+
+						saveAndCloseImage(cellMaskLoc, TCSDir, 'Cell Spread ', 'Cell Spread');
 
 						//Store the average distance from the centre of mass to the xtremeties
 						Array.getStatistics(distances, disMin, disMax, disMean, disStdDev);
@@ -549,6 +562,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 						simpleValues[4] = somaArea;
 
 						selectWindow(File.getName(somaName));
+						run("Properties...", "channels=1 slices=1 frames=1 unit=pixels pixel_width=1 pixel_height=1 voxel_depth=1");
 						List.setMeasurements;
 
 						resultsStrings = newArray("XM", "YM");
@@ -564,7 +578,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 						//We then find the centre of mass of the soma, and the radius of the soma (on average)
 						//so that we can use the point and the radius to calculate a sholl analysis on the cell masks
 						//starting from the edge of the soma
-						startradius = sqrt(somaArea) / PI;
+						startradius = 2*(sqrt(somaArea) / PI);
 		
 						selectWindow(File.getName(cellMaskLoc));
 						run("Select None");
@@ -573,14 +587,20 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 						//Need to change this so that users will also have to download a .py file and save this in plugins as well?
 						pyFileLocation = '/Users/devin.clarke/Documents/GitHub/ImageJMicroMorphJarTest/src/main/resources/scripts/Accessory Scripts/Sholl_Analysis_Script.py';
 						pythonText = File.openAsString(pyFileLocation); 
-						saveShollAs = TCSDir + "Sholl " + File.getNameWithoutExtension(maskName[currCell]) + ".csv";
+						saveShollAs = TCSDir + "/Results/";
 						call("ij.plugin.Macro_Runner.runPython", pythonText, "startRad="+startradius+",stepSize="+iniValues[0]+",saveLoc="+saveShollAs+",maskName="+maskName[currCell]+",tcsVal="+tcsValue[TCSLoops]+"");
 						////////
 						////////
 						////////
 
+						selectWindow(File.getName(cellMaskLoc));
+						run("Close");
+
+						selectWindow(File.getName(somaName));
+						run("Close");
+
 						//This code we can paste later on - will be to update the table and relevant column names
-						cellParameterTable = TCSDir + "Cell Parameters.csv";
+						cellParameterTable = TCSDir + "/Results/Cell Parameters.csv";
 
 						//Retrieving the status of each mask we need to generate for the current substack (and TCS)
 						print("Retrieving cell parameters");

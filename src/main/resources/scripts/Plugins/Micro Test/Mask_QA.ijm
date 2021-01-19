@@ -1,4 +1,5 @@
 function getWorkingAndStorageDirectories(){
+	//Asks the user to point us to their working and image storage directories
 
     Dialog.create("Pick Directory");
     Dialog.addMessage("Choose morphology analysis working directory");
@@ -12,7 +13,11 @@ function getWorkingAndStorageDirectories(){
     Dialog.show();
     //Get the parent 2P directory i.e. where all the raw 2P images are stored
     imageStorage = getDirectory("Choose the image storage directory");
-    setOption("JFileChooser", false);
+	setOption("JFileChooser", false);
+	
+	if(workingDirectory == imageStorage) {
+		exit("Selected the same directory for 'Working' and 'Image Storage'");
+	}
 
     //Here we create an array to store the full name of the directories we'll be 
     //working with within our morphology processing directory
@@ -25,11 +30,6 @@ function getWorkingAndStorageDirectories(){
     directoriesNames = newArray('Input', 'Output', 'Done', 'Image Storage');
     for (i = 0; i < directories.length; i++) {
 		print('Directories', directoriesNames[i], ':',  directories[i]);
-    }
-
-    images_in_storage = listFilesAndFilesSubDirectories(directories[3], '.tif');
-    if(images_in_storage.length == 0) {
-    	exit('No .tif images in image storage, exiting plugin');
     }
 
     return directories;
@@ -81,16 +81,25 @@ function listFilesAndFilesSubDirectories(directoryName, subString) {
 }
 
 function getTableColumn(fileLoc, colName) {
+	//Open the table at fileLoc, retrieve the colName column, if it doesn't exist,
+	//return an array the size of the table filled with -1
 
 	print("Retrieving the column ", colName, " from the table ", File.getName(fileLoc));
+
+	if(File.exists(fileLoc) != 1) {
+		exit("Table " + fileLoc + "doesn't exist");
+	}
 
 	open(fileLoc);
 	tableName = Table.title;
 	selectWindow(tableName);
 
+	//If our column exists
 	columns = Table.headings;
 	if(indexOf(columns, colName) > -1) {
 		outputArray = Table.getColumn(colName);
+	
+	//Else
 	} else {
 		outputArray = newArray(Table.size);
 		Array.fill(outputArray, -1);
@@ -104,6 +113,7 @@ function getTableColumn(fileLoc, colName) {
 }
 
 function findFileWithFormat(folder, fileFormat) {
+	//Look for a file with the format fileFormat in folder
 
 	//We get the list of files in the folder
 	fileList = getFileList(folder);
@@ -131,7 +141,8 @@ function findFileWithFormat(folder, fileFormat) {
 	}
 
 	if(storeIt[0] == 'none') {
-		exit("No file found");
+		print("No file found");
+		return newArray('Not found');
 	} else {
 		return storeIt;
 	}
@@ -149,9 +160,11 @@ function getIniData(iniFolder, iniStrings) {
 	iniLocations = findFileWithFormat(iniFolder, "ini");
 	if(iniLocations.length > 1) {
 		exit("More than 1 ini file found, exiting plugin");
-	} else {
+	} else if(iniLocations[0] != 'Not found') {
 		print(".ini file found at", iniLocations[0]);
 		iniToOpen = iniLocations[0];
+	} else if(iniLocations[0] == 'Not found') {
+		exit("No ini file found for calibration");
 	}
 
 	iniValues = parseIniValues(iniStrings, iniToOpen);
@@ -160,6 +173,7 @@ function getIniData(iniFolder, iniStrings) {
 }
 
 function parseIniValues(iniStrings, iniToOpen) {
+	//Parse our ini values from the strings in the ini file
 		
 	//We open the ini file as a string
 	iniText = File.openAsString(iniToOpen);	
@@ -206,16 +220,25 @@ function substacksToUse(substackTableLoc, nameCol, processedCol, QCCol) {
 	processed = getTableColumn(substackTableLoc, processedCol);
 	qaValue = getTableColumn(substackTableLoc, QCCol);
 
-	output = newArray(1);
-	added = 0;
-	for(currSub = 0; currSub<substackNames.length; currSub++) {
-		if(processed[currSub] == 1 && qaValue[currSub] == 1) {
-			if(added == 0) {
-				output[0] = substackNames[currSub];
-			} else {
-				output = Array.concat(output, newArray(substackNames[currSub]));
+	if(substackNames[0] != -1) {
+
+		output = newArray(1);
+		added = 0;
+		
+		//For each substack, if its been processed and QA'd it's ready for analysis
+		for(currSub = 0; currSub<substackNames.length; currSub++) {
+			if(processed[currSub] == 1 && qaValue[currSub] == 1) {
+				if(added == 0) {
+					output[0] = substackNames[currSub];
+				} else {
+					output = Array.concat(output, newArray(substackNames[currSub]));
+				}
+				added = added + 1;
 			}
 		}
+
+	} else {
+		exit("Substack names column in " + substackTableLoc + " not populated");
 	}
 
 	return output;
@@ -275,6 +298,8 @@ function saveTCSStatusTable(currentSubstack, tcsValue, tcsMasksGenerated, tcsQCC
 	selectWindow("TCS Status Substack(" + currentSubstack +").csv");
 	run("Close");
 }
+
+//We're up to here in going through our comments
 
 function getCellMaskApproval(cellMaskLoc, cellLRLoc) {
 

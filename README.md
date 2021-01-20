@@ -1,6 +1,6 @@
 # Microglia Morphology Analysis Plugin
 
-This is the repo where development on turning the 'MicrogliaMorphologyAnalysis.ijm' script file present in https://github.com/BrainEnergyLab/Inflammation-Index into a plugin to improve reliability and useability.
+This is the repo where development on turning the 'MicrogliaMorphologyAnalysis.ijm' script file present in https://github.com/BrainEnergyLab/Inflammation-Index into a plugin to improve reliability and useability is being done.
 
 This plugin will be available as a .jar file to drop into the plugins folder of a Fiji installation. A .py file will also need to be added to the plugins folder to facilitate the Sholl analysis of cell masks.
 

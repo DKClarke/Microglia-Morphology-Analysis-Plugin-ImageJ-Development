@@ -299,8 +299,6 @@ function saveTCSStatusTable(currentSubstack, tcsValue, tcsMasksGenerated, tcsQCC
 	run("Close");
 }
 
-//We're up to here in going through our comments
-
 function getCellMaskApproval(cellMaskLoc, cellLRLoc) {
 
 	//Open this TCS's version of the mask
@@ -327,6 +325,7 @@ function getCellMaskApproval(cellMaskLoc, cellLRLoc) {
 
 function generateCellSomaMask(cellMaskLoc, cellLRLoc) {
 
+	//Select the cell mask
 	selectWindow(File.getName(cellMaskLoc));
 	run("Select None");
 	
@@ -334,6 +333,7 @@ function generateCellSomaMask(cellMaskLoc, cellLRLoc) {
 	run("Create Selection");
 	getSelectionCoordinates(xpoints, ypoints);
 
+	//Apply some image functions to the cell from the LR image to generate a soma mask
 	selectWindow(File.getName(cellLRLoc));
 	run("Select None");
 	run("Duplicate...", " ");

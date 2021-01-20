@@ -1,3 +1,215 @@
+function getWorkingAndStorageDirectories(){
+	//Asks the user to point us to their working and image storage directories
+
+    Dialog.create("Pick Directory");
+    Dialog.addMessage("Choose morphology analysis working directory");
+    Dialog.show();
+
+    setOption("JFileChooser", true);
+    workingDirectory = getDirectory("Choose morphology analysis working directory");
+
+    Dialog.create("Pick Directory");
+    Dialog.addMessage("Choose the image storage directory");
+    Dialog.show();
+    //Get the parent 2P directory i.e. where all the raw 2P images are stored
+    imageStorage = getDirectory("Choose the image storage directory");
+	setOption("JFileChooser", false);
+	
+	if(workingDirectory == imageStorage) {
+		exit("Selected the same directory for 'Working' and 'Image Storage'");
+	}
+
+    //Here we create an array to store the full name of the directories we'll be 
+    //working with within our morphology processing directory
+    directories=newArray(workingDirectory+"Input" + File.separator, 
+						workingDirectory+"Output" + File.separator, 
+						workingDirectory+"Done" + File.separator,
+						imageStorage);
+    //[0] is input, [1] is output, [2] is done, [3] is image storage
+
+    directoriesNames = newArray('Input', 'Output', 'Done', 'Image Storage');
+    for (i = 0; i < directories.length; i++) {
+		print('Directories', directoriesNames[i], ':',  directories[i]);
+    }
+
+    return directories;
+}
+
+//Function finds all files that contain "substring" in the path "directoryname" 
+//"fileLocations" is an array that is passed in to fill with paths that contain substring
+function listFilesAndFilesSubDirectories(directoryName, subString) {
+
+	//Get the list of files in the directory
+	listOfFiles = getFileList(directoryName);
+
+	//an array to add onto our fileLocations array to extend it so we can keep adding to it
+	arrayToConcat = newArray(1);
+    fileLocations = newArray(1);
+
+	//Loop through the files in the file list
+	for (i=0; i<listOfFiles.length; i++) {
+
+		//Create a string of the full path name
+		fullPath = directoryName+listOfFiles[i];
+		
+		//If the file we're checking is a file and not a directory and if it  contains the substring we're 
+		//interested in within its full path we check  against the absolute path of our file in lower case on both counts
+		if (File.isDirectory(fullPath)==0 && indexOf(toLowerCase(fullPath), toLowerCase(subString))>-1) {
+			
+			//We store the full path in the output fileLocations at the latest index 
+			//(end of the array) and add an extra bit onto the Array so we can keep filling it
+			fileLocations = Array.concat(fileLocations, arrayToConcat);
+			currentIndex=fileLocations.length-1;
+			fileLocations[currentIndex] = fullPath;
+
+		//If the file we're checking is a directory, then we run the whole thing on that directory
+		} else if (File.isDirectory(fullPath)==1) {
+
+			//Create a new array to fill whilst we run on this directory and at the end add it onyo the fileLocations array 
+			tempArray = listFilesAndFilesSubDirectories(fullPath, subString);
+			fileLocations = Array.concat(fileLocations, tempArray);     
+			
+		}
+	}
+
+	//Create a new array that we fill with all non zero values of fileLocations
+	output = Array.deleteValue(fileLocations, 0);
+
+	//Then return the output array
+	return output;
+	
+}
+
+function getTableColumn(fileLoc, colName) {
+	//Open the table at fileLoc, retrieve the colName column, if it doesn't exist,
+	//return an array the size of the table filled with -1
+
+	print("Retrieving the column ", colName, " from the table ", File.getName(fileLoc));
+
+	if(File.exists(fileLoc) != 1) {
+		exit("Table " + fileLoc + "doesn't exist");
+	}
+
+	open(fileLoc);
+	tableName = Table.title;
+	selectWindow(tableName);
+
+	//If our column exists
+	columns = Table.headings;
+	if(indexOf(columns, colName) > -1) {
+		outputArray = Table.getColumn(colName);
+	
+	//Else
+	} else {
+		outputArray = newArray(Table.size);
+		Array.fill(outputArray, -1);
+	}
+
+	selectWindow(tableName);
+	run("Close");
+
+	return outputArray;
+
+}
+
+function findFileWithFormat(folder, fileFormat) {
+	//Look for a file with the format fileFormat in folder
+
+	//We get the list of files in the folder
+	fileList = getFileList(folder);
+	
+	//Create an array to store our locations and a counter for how many files we've found
+	storeIt = newArray(1);
+	storeIt[0] = 'none';
+	count = 0;
+	for(i=0; i<fileList.length; i++) {
+		if(endsWith(toLowerCase(fileList[i]), fileFormat)) {
+			//Create a variable that tells us which file has the format we're looking for
+			fileLocation = folder + fileList[i]; 
+			
+			//If we're onto our second location, create a new array to tack onto storeIt that we then
+			//fill with the new location
+			if(count >0) {
+				appendArray = newArray(1);
+				storeIt = Array.concat(storeIt, appendArray);
+			}
+			
+			//Store the location and increase the count
+			storeIt[count] = fileLocation;
+			count += 1;
+		}
+	}
+
+	if(storeIt[0] == 'none') {
+		print("No file found");
+		return newArray('Not found');
+	} else {
+		return storeIt;
+	}
+
+}
+
+//This is a function to retrieve the data from the ini file. The ini file contains calibration information for the 
+//entire experiment that we use to calibrate our images. iniFolder is the folder within which the ini file is located, 
+//and iniValues is an array we pass into the function that we fill with calibration values before returning it	
+function getIniData(iniFolder, iniStrings) {
+
+	print("Retrieving .ini data");
+
+	//Find our ini file
+	iniLocations = findFileWithFormat(iniFolder, "ini");
+	if(iniLocations.length > 1) {
+		exit("More than 1 ini file found, exiting plugin");
+	} else if(iniLocations[0] != 'Not found') {
+		print(".ini file found at", iniLocations[0]);
+		iniToOpen = iniLocations[0];
+	} else if(iniLocations[0] == 'Not found') {
+		exit("No ini file found for calibration");
+	}
+
+	iniValues = parseIniValues(iniStrings, iniToOpen);
+		
+	return iniValues;
+}
+
+function parseIniValues(iniStrings, iniToOpen) {
+	//Parse our ini values from the strings in the ini file
+		
+	//We open the ini file as a string
+	iniText = File.openAsString(iniToOpen);	
+	
+	iniValues = newArray(iniStrings.length);
+
+	//Looping through the values we want to grab
+	for(i=0; i<iniStrings.length; i++) {
+
+		//We create a start point that is the index of our iniStrings + the length of the string
+		startPoint = indexOf(iniText, iniStrings[i])+lengthOf(iniStrings[i]);
+
+		//Get a substring that starts at our startPoint i.e. where the numbers of our current string start
+		checkString = substring(iniText, startPoint);
+
+		//For each character, if it isn't numeric add 1 to the hitCount and if we hit
+		//two consecutive non-numerics, go back to pull out the values and store them
+		hitCount = 0;
+		for(j=0; j<lengthOf(checkString); j++) {
+			if(charCodeAt(checkString, j) < 48 || charCodeAt(checkString, j) > 57) {
+				hitCount = hitCount + 1;
+				if(hitCount == 2) {
+					realString = substring(checkString, 0, j);
+					break;
+				}
+			}
+		}
+
+		//Parse our values
+		iniValues[i] = parseFloat(realString);
+	}
+
+	return iniValues;
+
+}
+
 function makeDirectories(directories) {
 
     //Here we make our working directories by looping through our folder names, 
@@ -14,9 +226,12 @@ function makeDirectories(directories) {
 }
 
 function getOrCreateTableColumn(tableLoc, columnName, defaultValue, defaultLength) {
+
+	//If our table exists, get our column
 	if(File.exists(tableLoc) == 1) {
 		outputArray = getTableColumn(tableLoc, columnName);
 	} else {
+		print("Table doesn't exist; creating array with default value of default length");
 		outputArray = newArray(defaultLength);
 		Array.fill(outputArray, defaultValue);
 	}
@@ -24,20 +239,25 @@ function getOrCreateTableColumn(tableLoc, columnName, defaultValue, defaultLengt
 	return outputArray;
 }
 
+//Work out whether to proceed with cell detection on this image
 function proceedWithCellDetection(autoPassedQA, manualPassedQA, substacksMade, substacksPossible) {
 
+	//Our default is we don't proceed with cell detection
 	proceed = false;
 
+	//If the image has passed either automatic or manual QA, set passedQA to true
 	passedQA = false;
 	if(autoPassedQA[currImage] == 1 || manualPassedQA[currImage] == 1) {
 		passedQA = true;
 	}
 
+	//If we haven't already made all the substacks for this image, set madeAllSubstacks to false
 	madeAllSubstacks = true;
 	if(substacksMade[currImage] == 0 || (substacksPossible[currImage] == substacksMade[currImage])){
 		madeAllSubstacks = false;
 	}
 
+	//If the image passed QA, and we still have substacks to make for it, set proceed to true
 	if(passedQA == true && madeAllSubstacks == false) {
 		proceed = true;
 	}
@@ -46,27 +266,21 @@ function proceedWithCellDetection(autoPassedQA, manualPassedQA, substacksMade, s
 
 }
 
-function getNoSubstacks(imageName, directories, substacksPossible, iniValues, preProcStringToFind, zBuffer) {
-			
-	//If the image was kept, count how many 10um thick substacks we can make with at least
-	//10um spacing between them, and 10um from the bottom and top of the stack
-	imageNameRaw = File.getNameWithoutExtension(imageName);
-	imagePath = directories[1]+imageNameRaw+"/"+imageNameRaw+" processed.tif";
+function getNoSubstacks(substacksPossible, iniValues, zBuffer) {
 
+	//If we haven't calculated how many substacks we can make for the processed image
 	if(substacksPossible == -1) {
-
-		timepoints = openAndGetImageTimepoints(imagePath, iniValues, 'Morphology');
-		timepoints = 1;
-		selectWindow(File.getName(imagePath));
-		run("Close");
 		
 		//Calculate how much Z depth there is in the stack
-		zSize = iniValues[3] * timepoints * iniValues[2];
+		zSize = iniValues[3] * iniValues[2];
+		//Index 0 is xPxlSz, then yPxlSz, zPxlSz, ZperT, FperZ
+		//Here we do the size of Z pixels * the number of Z per timepoint (i.e. number of Z slices)
 
 		//Calculate how many 10um thick substacks we can make from this stack, including a user defined buffer size
 		//between substacks
 		noSubstacks = floor(zSize / (zBuffer+10));
 
+	//If we have already calculated the number of stacks we can make, return this
 	} else {
 		noSubstacks = substacksPossible;
 	}
@@ -74,6 +288,8 @@ function getNoSubstacks(imageName, directories, substacksPossible, iniValues, pr
 	return noSubstacks;
 
 }
+
+//We're up to here in terms of reviewing this module
 
 function getSlicesForEachSubstack(noSubstacks, zBuffer) {
 	//Fill maskGenerationArray with a string of the range of z planes to include in each substack
@@ -250,7 +466,7 @@ function userApproval(waitForUserDialog, dialogName, checkboxString) {
 	//Scale the image to fit, before exiting and displaying hidden images from 
 	//batch mode, autocontrasting the image, then waiting for the user				
 	run("Scale to Fit");					
-	setBatchMode("show");
+	setBatchMode("Show");
 	setOption("AutoContrast", true);
 	waitForUser(waitForUserDialog);
 
@@ -379,215 +595,6 @@ function addSelectedCoordinateStoExisting(tableLoc) {
 
 }
 
-function getWorkingAndStorageDirectories(){
-
-    Dialog.create("Pick Directory");
-    Dialog.addMessage("Choose morphology analysis working directory");
-    Dialog.show();
-
-    setOption("JFileChooser", true);
-    workingDirectory = getDirectory("Choose morphology analysis working directory");
-
-    Dialog.create("Pick Directory");
-    Dialog.addMessage("Choose the image storage directory");
-    Dialog.show();
-    //Get the parent 2P directory i.e. where all the raw 2P images are stored
-    imageStorage = getDirectory("Choose the image storage directory");
-    setOption("JFileChooser", false);
-
-    //Here we create an array to store the full name of the directories we'll be 
-    //working with within our morphology processing directory
-    directories=newArray(workingDirectory+"Input" + File.separator, 
-						workingDirectory+"Output" + File.separator, 
-						workingDirectory+"Done" + File.separator,
-						imageStorage);
-    //[0] is input, [1] is output, [2] is done, [3] is image storage
-
-    directoriesNames = newArray('Input', 'Output', 'Done', 'Image Storage');
-    for (i = 0; i < directories.length; i++) {
-		print('Directories', directoriesNames[i], ':',  directories[i]);
-    }
-
-    images_in_storage = listFilesAndFilesSubDirectories(directories[3], '.tif');
-    if(images_in_storage.length == 0) {
-    	exit('No .tif images in image storage, exiting plugin');
-    }
-
-    return directories;
-}
-
-//Function finds all files that contain "substring" in the path "directoryname" 
-//"fileLocations" is an array that is passed in to fill with paths that contain substring
-function listFilesAndFilesSubDirectories(directoryName, subString) {
-
-	//Get the list of files in the directory
-	listOfFiles = getFileList(directoryName);
-
-	//an array to add onto our fileLocations array to extend it so we can keep adding to it
-	arrayToConcat = newArray(1);
-    fileLocations = newArray(1);
-
-	//Loop through the files in the file list
-	for (i=0; i<listOfFiles.length; i++) {
-
-		//Create a string of the full path name
-		fullPath = directoryName+listOfFiles[i];
-		
-		//If the file we're checking is a file and not a directory and if it  contains the substring we're 
-		//interested in within its full path we check  against the absolute path of our file in lower case on both counts
-		if (File.isDirectory(fullPath)==0 && indexOf(toLowerCase(fullPath), toLowerCase(subString))>-1) {
-			
-			//We store the full path in the output fileLocations at the latest index 
-			//(end of the array) and add an extra bit onto the Array so we can keep filling it
-			fileLocations = Array.concat(fileLocations, arrayToConcat);
-			currentIndex=fileLocations.length-1;
-			fileLocations[currentIndex] = fullPath;
-
-		//If the file we're checking is a directory, then we run the whole thing on that directory
-		} else if (File.isDirectory(fullPath)==1) {
-
-			//Create a new array to fill whilst we run on this directory and at the end add it onyo the fileLocations array 
-			tempArray = listFilesAndFilesSubDirectories(fullPath, subString);
-			fileLocations = Array.concat(fileLocations, tempArray);     
-			
-		}
-	}
-
-	//Create a new array that we fill with all non zero values of fileLocations
-	output = Array.deleteValue(fileLocations, 0);
-
-	//Then return the output array
-	return output;
-	
-}
-
-function getTableColumn(fileLoc, colName) {
-
-	open(fileLoc);
-	tableName = Table.title;
-	selectWindow(tableName);
-
-	outputArray = Table.getColumn(colName);
-
-	selectWindow(tableName);
-	run("Close");
-
-	return outputArray;
-
-}
-
-function parseIniValues(iniStrings, iniToOpen) {
-		
-	//We open the ini file as a string
-	iniText = File.openAsString(iniToOpen);	
-	
-	iniValues = newArray(iniStrings.length);
-
-	//Looping through the values we want to grab
-	for(i=0; i<iniStrings.length; i++) {
-
-		//We create a start point that is the index of our iniStrings + the length of the string
-		startPoint = indexOf(iniText, iniStrings[i])+lengthOf(iniStrings[i]);
-
-		//Get a substring that starts at our startPoint i.e. where the numbers of our current string start
-		checkString = substring(iniText, startPoint);
-
-		//For each character, if it isn't numeric add 1 to the hitCount and if we hit
-		//two consecutive non-numerics, go back to pull out the values and store them
-		hitCount = 0;
-		for(j=0; j<lengthOf(checkString); j++) {
-			if(charCodeAt(checkString, j) < 48 || charCodeAt(checkString, j) > 57) {
-				hitCount = hitCount + 1;
-				if(hitCount == 2) {
-					realString = substring(checkString, 0, j);
-					break;
-				}
-			}
-		}
-
-		//Parse our values
-		iniValues[i] = parseFloat(realString);
-	}
-
-	return iniValues;
-
-}
-
-
-//This is a function to retrieve the data from the ini file. The ini file contains calibration information for the 
-//entire experiment that we use to calibrate our images. iniFolder is the folder within which the ini file is located, 
-//and iniValues is an array we pass into the function that we fill with calibration values before returning it	
-function getIniData(iniFolder, iniStrings) {
-
-	//Find our ini file
-	iniLocations = findFileWithFormat(iniFolder, "ini");
-	if(iniLocations.length > 1) {
-		exit("More than 1 ini file found, exiting plugin");
-	} else {
-		print(".ini file found at", iniLocations[0]);
-		iniToOpen = iniLocations[0];
-	}
-
-	iniValues = parseIniValues(iniStrings, iniToOpen);
-		
-	return iniValues;
-}
-
-function findFileWithFormat(folder, fileFormat) {
-
-	//We get the list of files in the folder
-	fileList = getFileList(folder);
-	
-	//Create an array to store our locations and a counter for how many files we've found
-	storeIt = newArray(1);
-	storeIt[0] = 'none';
-	count = 0;
-	for(i=0; i<fileList.length; i++) {
-		if(endsWith(toLowerCase(fileList[i]), fileFormat)) {
-			//Create a variable that tells us which file has the format we're looking for
-			fileLocation = folder + fileList[i]; 
-			
-			//If we're onto our second location, create a new array to tack onto storeIt that we then
-			//fill with the new location
-			if(count >0) {
-				appendArray = newArray(1);
-				storeIt = Array.concat(storeIt, appendArray);
-			}
-			
-			//Store the location and increase the count
-			storeIt[count] = fileLocation;
-			count += 1;
-		}
-	}
-
-	if(storeIt[0] == 'none') {
-		exit("No file found");
-	} else {
-		return storeIt;
-	}
-
-}
-
-function openAndGetImageTimepoints(imagePath, calibrationValues, appendWith) {
-
-    open(imagePath);
-            
-    //Get out the animal name info - animal and 
-    //timepoint that we store at index [0] in the array, the timepoint only at [1]
-    //the animal only at [2] and finally the file name without the .tif on the end
-    //that we store at [3]
-    imageNames = getAnimalTimepointInfo(imagePath, appendWith);
-    print(imageNames[3] + " opened");
-
-	//Calculate the number of timepoints in the image by multiplying frames per plane * number of plans, and divide
-	//that by the number of slices in the image
-	selectWindow(File.getName(imagePath));
-    timepoints = (calibrationValues[3] * calibrationValues[4])/nSlices;
-
-    return timepoints;
-
-}
-
 //"OutputArray" is an array in which we store the output of this function
 //InputName is a string file path of an image generated by this macro
 //Function cuts up the file path of the inputName into different segments that
@@ -703,7 +710,7 @@ for(currImage = 0; currImage < imageName.length; currImage++) {
 		print(imageName[currImage]);
 
 		//Calculate the number of substacks we can make for this image
-		substacksPossible[currImage] = getNoSubstacks(imageName[currImage], directories, substacksPossible[currImage], iniValues, 'Morphology', zBuffer);
+		substacksPossible[currImage] = getNoSubstacks(substacksPossible[currImage], iniValues, zBuffer);
 
 		print('Number of substacks we can extract from stack:');
 		print(substacksPossible[currImage]);

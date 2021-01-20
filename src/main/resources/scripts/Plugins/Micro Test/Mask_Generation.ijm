@@ -1,3 +1,279 @@
+function getWorkingAndStorageDirectories(){
+	//Asks the user to point us to their working and image storage directories
+
+    Dialog.create("Pick Directory");
+    Dialog.addMessage("Choose morphology analysis working directory");
+    Dialog.show();
+
+    setOption("JFileChooser", true);
+    workingDirectory = getDirectory("Choose morphology analysis working directory");
+
+    Dialog.create("Pick Directory");
+    Dialog.addMessage("Choose the image storage directory");
+    Dialog.show();
+    //Get the parent 2P directory i.e. where all the raw 2P images are stored
+    imageStorage = getDirectory("Choose the image storage directory");
+	setOption("JFileChooser", false);
+	
+	if(workingDirectory == imageStorage) {
+		exit("Selected the same directory for 'Working' and 'Image Storage'");
+	}
+
+    //Here we create an array to store the full name of the directories we'll be 
+    //working with within our morphology processing directory
+    directories=newArray(workingDirectory+"Input" + File.separator, 
+						workingDirectory+"Output" + File.separator, 
+						workingDirectory+"Done" + File.separator,
+						imageStorage);
+    //[0] is input, [1] is output, [2] is done, [3] is image storage
+
+    directoriesNames = newArray('Input', 'Output', 'Done', 'Image Storage');
+    for (i = 0; i < directories.length; i++) {
+		print('Directories', directoriesNames[i], ':',  directories[i]);
+    }
+
+    return directories;
+}
+
+//Function finds all files that contain "substring" in the path "directoryname" 
+//"fileLocations" is an array that is passed in to fill with paths that contain substring
+function listFilesAndFilesSubDirectories(directoryName, subString) {
+
+	//Get the list of files in the directory
+	listOfFiles = getFileList(directoryName);
+
+	//an array to add onto our fileLocations array to extend it so we can keep adding to it
+	arrayToConcat = newArray(1);
+    fileLocations = newArray(1);
+
+	//Loop through the files in the file list
+	for (i=0; i<listOfFiles.length; i++) {
+
+		//Create a string of the full path name
+		fullPath = directoryName+listOfFiles[i];
+		
+		//If the file we're checking is a file and not a directory and if it  contains the substring we're 
+		//interested in within its full path we check  against the absolute path of our file in lower case on both counts
+		if (File.isDirectory(fullPath)==0 && indexOf(toLowerCase(fullPath), toLowerCase(subString))>-1) {
+			
+			//We store the full path in the output fileLocations at the latest index 
+			//(end of the array) and add an extra bit onto the Array so we can keep filling it
+			fileLocations = Array.concat(fileLocations, arrayToConcat);
+			currentIndex=fileLocations.length-1;
+			fileLocations[currentIndex] = fullPath;
+
+		//If the file we're checking is a directory, then we run the whole thing on that directory
+		} else if (File.isDirectory(fullPath)==1) {
+
+			//Create a new array to fill whilst we run on this directory and at the end add it onyo the fileLocations array 
+			tempArray = listFilesAndFilesSubDirectories(fullPath, subString);
+			fileLocations = Array.concat(fileLocations, tempArray);     
+			
+		}
+	}
+
+	//Create a new array that we fill with all non zero values of fileLocations
+	output = Array.deleteValue(fileLocations, 0);
+
+	//Then return the output array
+	return output;
+	
+}
+
+function getTableColumn(fileLoc, colName) {
+	//Open the table at fileLoc, retrieve the colName column, if it doesn't exist,
+	//return an array the size of the table filled with -1
+
+	print("Retrieving the column ", colName, " from the table ", File.getName(fileLoc));
+
+	if(File.exists(fileLoc) != 1) {
+		exit("Table " + fileLoc + "doesn't exist");
+	}
+
+	open(fileLoc);
+	tableName = Table.title;
+	selectWindow(tableName);
+
+	//If our column exists
+	columns = Table.headings;
+	if(indexOf(columns, colName) > -1) {
+		outputArray = Table.getColumn(colName);
+	
+	//Else
+	} else {
+		outputArray = newArray(Table.size);
+		Array.fill(outputArray, -1);
+	}
+
+	selectWindow(tableName);
+	run("Close");
+
+	return outputArray;
+
+}
+
+function findFileWithFormat(folder, fileFormat) {
+	//Look for a file with the format fileFormat in folder
+
+	//We get the list of files in the folder
+	fileList = getFileList(folder);
+	
+	//Create an array to store our locations and a counter for how many files we've found
+	storeIt = newArray(1);
+	storeIt[0] = 'none';
+	count = 0;
+	for(i=0; i<fileList.length; i++) {
+		if(endsWith(toLowerCase(fileList[i]), fileFormat)) {
+			//Create a variable that tells us which file has the format we're looking for
+			fileLocation = folder + fileList[i]; 
+			
+			//If we're onto our second location, create a new array to tack onto storeIt that we then
+			//fill with the new location
+			if(count >0) {
+				appendArray = newArray(1);
+				storeIt = Array.concat(storeIt, appendArray);
+			}
+			
+			//Store the location and increase the count
+			storeIt[count] = fileLocation;
+			count += 1;
+		}
+	}
+
+	if(storeIt[0] == 'none') {
+		print("No file found");
+		return newArray('Not found');
+	} else {
+		return storeIt;
+	}
+
+}
+
+//This is a function to retrieve the data from the ini file. The ini file contains calibration information for the 
+//entire experiment that we use to calibrate our images. iniFolder is the folder within which the ini file is located, 
+//and iniValues is an array we pass into the function that we fill with calibration values before returning it	
+function getIniData(iniFolder, iniStrings) {
+
+	print("Retrieving .ini data");
+
+	//Find our ini file
+	iniLocations = findFileWithFormat(iniFolder, "ini");
+	if(iniLocations.length > 1) {
+		exit("More than 1 ini file found, exiting plugin");
+	} else if(iniLocations[0] != 'Not found') {
+		print(".ini file found at", iniLocations[0]);
+		iniToOpen = iniLocations[0];
+	} else if(iniLocations[0] == 'Not found') {
+		exit("No ini file found for calibration");
+	}
+
+	iniValues = parseIniValues(iniStrings, iniToOpen);
+		
+	return iniValues;
+}
+
+function parseIniValues(iniStrings, iniToOpen) {
+	//Parse our ini values from the strings in the ini file
+		
+	//We open the ini file as a string
+	iniText = File.openAsString(iniToOpen);	
+	
+	iniValues = newArray(iniStrings.length);
+
+	//Looping through the values we want to grab
+	for(i=0; i<iniStrings.length; i++) {
+
+		//We create a start point that is the index of our iniStrings + the length of the string
+		startPoint = indexOf(iniText, iniStrings[i])+lengthOf(iniStrings[i]);
+
+		//Get a substring that starts at our startPoint i.e. where the numbers of our current string start
+		checkString = substring(iniText, startPoint);
+
+		//For each character, if it isn't numeric add 1 to the hitCount and if we hit
+		//two consecutive non-numerics, go back to pull out the values and store them
+		hitCount = 0;
+		for(j=0; j<lengthOf(checkString); j++) {
+			if(charCodeAt(checkString, j) < 48 || charCodeAt(checkString, j) > 57) {
+				hitCount = hitCount + 1;
+				if(hitCount == 2) {
+					realString = substring(checkString, 0, j);
+					break;
+				}
+			}
+		}
+
+		//Parse our values
+		iniValues[i] = parseFloat(realString);
+	}
+
+	return iniValues;
+
+}
+
+
+function substacksToUse(substackTableLoc, nameCol, processedCol, QCCol) {
+
+	print("Retrieving the substacks that are ready for mask generation");
+
+	//We return an array of substack names to use if they have been processed an QAs
+	substackNames = getTableColumn(substackTableLoc, nameCol);
+	processed = getTableColumn(substackTableLoc, processedCol);
+	qaValue = getTableColumn(substackTableLoc, QCCol);
+
+	if(substackNames[0] != -1) {
+
+		output = newArray(1);
+		added = 0;
+		
+		//For each substack, if its been processed and QA'd it's ready for analysis
+		for(currSub = 0; currSub<substackNames.length; currSub++) {
+			if(processed[currSub] == 1 && qaValue[currSub] == 1) {
+				if(added == 0) {
+					output[0] = substackNames[currSub];
+				} else {
+					output = Array.concat(output, newArray(substackNames[currSub]));
+				}
+				added = added + 1;
+			}
+		}
+
+	} else {
+		exit("Substack names column in " + substackTableLoc + " not populated");
+	}
+
+	return output;
+
+}
+
+function getOrCreateTableColumn(tableLoc, columnName, defaultValue, defaultLength) {
+
+	//If our table exists, get our column
+	if(File.exists(tableLoc) == 1) {
+		outputArray = getTableColumn(tableLoc, columnName);
+	} else {
+		print("Table doesn't exist; creating array with default value of default length");
+		outputArray = newArray(defaultLength);
+		Array.fill(outputArray, defaultValue);
+	}
+
+	return outputArray;
+}
+
+function makeDirectories(directories) {
+
+    //Here we make our working directories by looping through our folder names, 
+    //concatenating them to our main parent directory
+    //and making them if they don't already exist
+    for(i=0; i<directories.length; i++) {
+        if(File.exists(directories[i])==0) {
+            File.makeDirectory(directories[i]);
+            print('Made directory ', directories[i]);
+        } else {
+        	print('Directory', directories[i], 'already exists');
+        }
+    }
+}
+
 function getMaskGenerationInputs() {
 
 	//These are the required inputs from the user
@@ -14,12 +290,13 @@ function getMaskGenerationInputs() {
 	//whether the user wants to manually trace processes to add to the analysis
 
 	Dialog.create("Info for each section");
-		
+
+	defaultValues = newArray(200, 800, 100, 100, 120)
+
 	//Here we loop through the strings and add a box for numeric input for each
-	for(i=0; i<strings.length-1; i++) {
-		Dialog.addNumber(strings[i], 0);
+	for(i=0; i<strings.length; i++) {
+		Dialog.addNumber(strings[i], defaultValues[i]);
 	}
-	Dialog.addNumber(strings[strings.length-1], 120);
 			
 	Dialog.show();
 						
@@ -33,59 +310,44 @@ function getMaskGenerationInputs() {
 
 }
 
-function makeImageNamesArray(directories, imageNameRaw, currSubstack, currXCoord, currYCoord) {
-
-	//We create an array to store different names we need for our mask generation where [0] is the name to save an image as, [1] is the
-	//fileName, and [2] is the LRName. [0] and [1] are repeats as we edit them differently within functions
-	imageNamesArray = newArray(directories[1] + imageNameRaw + "/Candidate Cell Masks/"+"Candidate mask for " + currSubstack + " x " + currXCoord +  " y " + currYCoord + " .tif", 
-	"Candidate mask for " + currSubstack + " x " + currXCoord +  " y " + currYCoord + " .tif",
-	"Local region for " + currSubstack + " x " + currXCoord +  " y " + currYCoord + " .tif");
-
-	return imageNamesArray;
-
-
-}
-
-function openAndCalibrateAvgProjImage(avgProjImageLoc, iniValues) {
-	//We open the image then calibrate it before converting it to 8-bit
-	open(avgProjImageLoc);
-	avgProjImage = File.getName(avgProjImageLoc);
+function openAndCalibrateImage(imageLocation, iniValues) {
+	
+	//We open the image then calibrate it
+	open(imageLocation);
+	avgProjImage = File.getName(imageLocation);
 	selectWindow(avgProjImage);
 	run("Properties...", "channels=1 slices=1 frames=1 unit=um pixel_width="+iniValues[0]+" pixel_height="+iniValues[1]+" voxel_depth="+iniValues[2]+"");
 }
 
-function coordinatesWithinBuffer(avgProjImageLoc, currXCoord, currYCoord, bufferInPixels) {
-	selectWindow(File.getName(avgProjImageLoc));
+function coordinatesWithinBuffer(imageLocation, currXCoord, currYCoord, bufferInPixels) {
+	
+	//Select our image and get its dimensions
+	selectWindow(File.getName(imageLocation));
 	getDimensions(originalWidth, originalHeight, originalChannels, originalSlices, originalFrames);
 	
-	//Calculate if our y or x coordinates or outside the bufer in pixels
+	//Calculate if our y or x coordinates are more than bufferInPixels pixels away from the edges of the image
 	yInsideBuffer = (currYCoord > bufferInPixels) || (currYCoord < (originalHeight - bufferInPixels));
 	xInsideBuffer = (currXCoord > bufferInPixels) || (currXCoord < (originalWidth - bufferInPixels));
 
+	//Return if both coordinates are inside our buffered area
 	return yInsideBuffer && xInsideBuffer;
 
 }
 
-function getLRCoords(avgProjImageLoc, cellLocCoords, LRLengthPixels) {
+function getLRCoords(imageLoc, cellLocCoords, LRLengthPixels) {
 
-
-	//Here we store x and y values that we would use to draw a 120x120um square aruond our coordinate - we store the coordinates
+	//Here we store x and y values that we would use to draw a 120x120um square around our coordinate - we store the coordinates
 	//that would be the top left corner of this square as that is what we need to input to draw it
 	LRCoords = newArray(cellLocCoords[0]-(LRLengthPixels/2), cellLocCoords[1]-(LRLengthPixels/2));
-	//[0] is xcordn, [1] is ycordn
 
-	selectWindow(File.getName(avgProjImageLoc));
+	//Get our image dimensions
+	selectWindow(File.getName(imageLoc));
 	getDimensions(LRWidth, LRHeight, LRChannels, LRSlices, LRFrames);
-
-	//Idea here is that if our x or y coordinates are less than half a LR length away from the edge, the LR length we create is half the 
-	//usual length + however far our coordinate is from the edge
-	//We also set our rectangle making coordinates to 0 if they would be less than 0 (i.e. our coordinates are less than half the LR distance
-	//from the pictre edges
 
 	//For each of our cell coordinates
 	for(currCoord = 0; currCoord < cellLocCoords.length; currCoord++) {
 
-		//If that coordinate is too close to the bottom left of the image for us to create a
+		//If that coordinate is too close to the left or bottom of the image for us to create a
 		//local region with the existing LR coordinates
 		if(cellLocCoords[currCoord] < LRLengthPixels/2) {
 
@@ -95,29 +357,37 @@ function getLRCoords(avgProjImageLoc, cellLocCoords, LRLengthPixels) {
 		}
 	}
 
+	//If the coordinate is too close to the right of the image for us to draw a full LR
 	if((LRWidth - cellLocCoords[0]) < LRLengthPixels/2) {
+		//Set the LR coordinate to be at least one LR length away from the right
 		LRCoords[0] = LRWidth - LRLengthPixels;
 	}
 
+	//If the coordinate is too close to the top of the image for us to draw a full LR
 	if((LRHeight - cellLocCoords[1]) < LRLengthPixels/2) {
+		//Set the LR coordinate to be at least one LR length away from the top
 		LRCoords[1] = LRHeight - LRLengthPixels;
 	}
 
+	//Return our adjusted coordinates for drawing our local region
 	return LRCoords;
 
 
 }
 
-function createLRImage(avgProjImageLoc, LRCoords, LRLengthArray) {
+function createLRImage(imageLoc, LRCoords, LRLengthArray) {
 
-	imageTitle = File.getName(avgProjImageLoc);
+	//Select our image and clear any selections
+	imageTitle = File.getName(imageLoc);
 	selectWindow(imageTitle);
 	run("Select None");
 
 	//Here we make our local region based on all the values we've calculated
 	makeRectangle(LRCoords[0], LRCoords[1], LRLengthArray[0], LRLengthArray[1]);
 	run("Duplicate...", " ");
-	tifLess = File.getNameWithoutExtension(avgProjImageLoc);
+
+	//Rename our LR image as "LR"
+	tifLess = File.getNameWithoutExtension(imageLoc);
 	selectWindow(tifLess + "-1.tif");
 	rename("LR");
 	run("Select None");
@@ -125,31 +395,56 @@ function createLRImage(avgProjImageLoc, LRCoords, LRLengthArray) {
 
 }
 
-function getOtsuValue(avgProjImageLoc, xCoord, yCoord) {
+function returnMaxAtPoint(xPoint, yPoint, windowName) {
+	selectWindow(windowName);
+	run("Select None");
+	topValue = getPixel(xPoint, yPoint);
 
-	//We then auto threshold the LR and then get the lower and upper threshold levels from the otsu method and call the lower threshold
-	//otsu
+	return topValue;
+}
+
+function getOtsuValue(imageLoc, xCoord, yCoord) {
+
+	//Select our LR image, auto threshold it using Otsu, and get the threshold values
 	print("Getting starting otsu thresholding value");
 	selectWindow("LR");
 	setAutoThreshold("Otsu dark");
 	selectWindow("LR");
 	getThreshold(otsu, upper);
 
-	//We get the grey value at that point selection, and then if the lower threshold of the image
-	//is bigger than that value, we set it to that value
-	selectWindow(File.getName(avgProjImageLoc));
-	pointValue = (getPixel(xCoord, yCoord)) - 1;
-	if(otsu>=pointValue) {
-		otsu = pointValue-1;
-	}
+	//Get the grey value at the marked cell coordinate, if the otsu threshold value is above the value
+	//at the marked point, adjust the threshold value so it is at least as high as the point marked
+	selectWindow(File.getName(imageLoc));
+	pointValue = returnMaxAtPoint(xCoord, yCoord, File.getName(imageLoc));
+	pointValue = pointValue - 1;
+	otsu = valueCheck(otsu, pointValue);
 
+	//Return our threshold value
 	return otsu;
 
 }
 
+//Function to check if the inputValue is above the topLimit - this is so that if 
+//our thresholding calculated value ends up above the highest grey value in the 
+//image then we set inputValue to that top value
+function valueCheck(inputValue, topLimit) {
+	
+	if(inputValue>=topLimit) {
+		print("Value is above our limit, setting to our limit - 1");
+		inputValue = topLimit-1;
+	} else {
+		print("Value is within our limits");
+	}
+
+	//We want a rounded threshold value since the images are in 8-bit, so we do 
+	//that before returning it
+	return round(inputValue);
+}
+
 function getConnectedMask(xCoord, yCoord, thresholdVal) {
 
-	//We then make the point on our image and find all connected pixels to that point that have grey values greater than the otsu value
+	//Select our LR image, make the point at the coordinates specified, then find the connected regions to that point that are equal or above
+	//the threhsold value in grey intensity
 	print("Finding mask connected to our coordinates ", xCoord, yCoord, " at our threshold ", thresholdVal);
 	selectWindow("LR");
 	makePoint(xCoord, yCoord);
@@ -157,6 +452,8 @@ function getConnectedMask(xCoord, yCoord, thresholdVal) {
 	selectWindow("LR");
 	run("Find Connected Regions", "allow_diagonal display_image_for_each start_from_point regions_for_values_over="+thresholdVal+" minimum_number_of_points=1 stop_after=1");
 	imgNamemask=getTitle();
+
+	//Rename the connected pixels mask as 'Connected'
 	rename("Connected");
 	print("Connected pixels found");
 
@@ -164,18 +461,13 @@ function getConnectedMask(xCoord, yCoord, thresholdVal) {
 
 function findMaximaInCoords() {
 
+	//For our connected mask image, get the selection that defines it
 	print("Finding the local maxima in our Connected image");
 	selectWindow("Connected");
 	run("Create Selection");
 	getSelectionCoordinates(xpoints, ypoints);
 
-	//We clear outside of our selection in our LR, then find the maxima in that and get the coordinates of the maxima
-	//to store these coordinates as the optimal point selection location
-
-	//We need to find the optimal location as we want our point selection to be on the brightest pixel on our target cell
-	//to ensure that our point selection isn't on a local minima, which whould make finding connected pixels that are 
-	//actually from our target cell very error-prone
-	
+	//Apply this selection to a duplicate of our LR image	
 	selectWindow("LR");
 	run("Duplicate...", " ");
 	selectWindow("LR-1");
@@ -183,7 +475,7 @@ function findMaximaInCoords() {
 	run("Clear Outside");
 	List.setMeasurements;
 
-	//Here we get the max value in the image and get out the point selection associated with the maxima using the
+	//Here we get the max value in that image and get out the coordinates of it using the
 	//"find maxima" function			
 	topValue = List.getValue("Max");
 	run("Select None");
@@ -199,14 +491,14 @@ function findMaximaInCoords() {
 
 }
 
-
-function saveLRImage(lrSaveLoc) {
+function saveImage(Image, saveLoc) {
 
 	//Now that we're certain we've got the optimal coordinates, we save our LR image
-	selectWindow("LR");
-	saveAs("tiff", lrSaveLoc);
-	selectWindow(File.getName(lrSaveLoc));
-	rename("LR");
+	selectWindow(Image);
+	run("Select None");
+	saveAs("tiff", saveLoc);
+	selectWindow(File.getName(saveLoc));
+	rename(Image);
 
 }
 
@@ -214,8 +506,8 @@ function getCurrentMaskArea(xCoord, yCoord, threshold) {
 
 	print("Getting area associated with our current mask");
 
-	//Here we are finding the same connected regions using the maxima as our point selection and then measuring the area
-	//of the connected region to get an initial area size associated with the starting otsu value
+	//Here we are finding the  connected region at our point using our threshold and then computing the area of the 
+	//connected mask
 	getConnectedMask(xCoord, yCoord, threshold);
 
 	selectWindow("Connected");
@@ -227,28 +519,85 @@ function getCurrentMaskArea(xCoord, yCoord, threshold) {
 
 }
 
+function getArrayOfMatchingValues(lookInArray, lookForValue, getValueFromArray) {
+
+	matchingValues = newArray(lookInArray.length);
+	Array.fill(matchingValues, -1);
+
+	//For every element in our reference array
+	for(currElement=0; currElement<lookInArray.length; currElement++) {
+		
+		//If the element matches what we're trying to find
+		if(lookInArray[currElement] == lookForValue) {
+
+			//Store what our matching value is
+			matchingValues[currElement] = getValueFromArray[currElement];
+		}
+
+	}
+
+	//Delete all filler values in our matchingY array
+	cleanVals = Array.deleteValue(matchingValues, -1);
+
+	return cleanVals;
+
+}
+
+function getRoundedMeanOfArray(array) {
+
+	//Get and return the mean of our matching values
+	Array.getStatistics(array, min, max, mean, sd);
+
+	return round(mean);
+
+}
+
 function tooCloseToEdge(imageName, bufferSize) {
 
-	//Takes the mask of the cell and turns it into its bounding quadrilateral, 
-	//then gets an array of all the coordinates of that quadrilateral
+	//For our image, get a selection that defines it
 	print("Calculating if our selection is too close to the edge of our image");
 	selectWindow(imageName);
-	getDimensions(functionWidth, functionHeight, functionChannels, functionSlices, functionFrames);
 	run("Create Selection");
-	getSelectionBounds(xF, yF, widthF, heightF);
+	getSelectionCoordinates(xCoords, yCoords);
+	Array.getStatistics(xCoords, xMin, xMax, mean, stdDev);
+	Array.getStatistics(yCoords, yMin, yMax, mean, stdDev) ;
 
-	xTouchesEdge = false;
-	if(xF <= bufferSize || (xF+widthF) >= (functionWidth - bufferSize)) {
-		xTouchesEdge = true;
+	//For our rightmost point, we already have our definixing X value (xMax) but we need to find the y value
+	//at the xMax coordinate, so get the mean of any matching y points
+	rightmostYArray = getArrayOfMatchingValues(xCoords, xMax, yCoords);
+	rightmostY = getRoundedMeanOfArray(rightmostYArray);
+
+	//For leftmost we already have our defining x (xMin) so again, get the mean of matching y points
+	leftmostYArray = getArrayOfMatchingValues(xCoords, xMin, yCoords);
+	leftmostY = getRoundedMeanOfArray(leftmostYArray);
+
+	//etc.
+	topmostXArray = getArrayOfMatchingValues(yCoords, yMin, xCoords);
+	topmostX = getRoundedMeanOfArray(topmostXArray);
+
+	bottommostXArray = getArrayOfMatchingValues(yCoords, yMax, xCoords);
+	bottommostX = getRoundedMeanOfArray(bottommostXArray);
+
+	xPoints = newarray(xMax, xMin, bottommostX, topmostX);
+	yPoints = newArray(rightmostY, leftmostY, yMax, yMin);
+	//[0] and [1] are highest x with y (rightmost), [2] and [3] are lowest x with y (leftmost), 
+	//[4] and [5] are x and highest y (bottommost) [6] and [7] are x with lowest y (topmost)
+
+	//For our 4 extrema, find out if they're within the buffer of our image
+	inBufferResults = newArray(xPoints.length);
+	for(currPoint = 0; currPoint < 4; currPoint++) {
+		inBufferResults[currPoint] = coordinatesWithinBuffer(imageName, xPoints[currPoint], yPoints[currPoint], bufferSize)
 	}
 
-	yTouchesEdge = false;
-	if(yF <= bufferSize || (yF+heightF) >= (functionHeight - bufferSize)) {
-		yTouchesEdge = true;
+	//If the mean of our results is 1 then all our results were true and we return false since we're not
+	//too close to the edge, else we return true
+	Array.getStatistics(inBufferResults, min, max, mean, stdDev);
+
+	if(mean == 1) {
+		return false;
+	} else {
+		return true;
 	}
-
-	return xTouchesEdge || yTouchesEdge;
-
 
 }
 
@@ -259,12 +608,10 @@ function getMaskStatus(area, currentTCS, TCSRange, touching, stabilised) {
 	//limits is an array to store the lower and upper limits of the cell area we're using within this TCS loop, calculated
 	//according to the error the user input
 	limits = newArray(currentTCS-TCSRange, currentTCS+TCSRange);
-	//Selection: //[0] is TCSLower, [1] is TCSUpper, [2] is range, [3] is increment, [4] is framesToKeep, [5] is trace
-	//Limits: [0] is lower limit, [1] is upper
 	
 	nextIteration = 0;
 
-	//If we're below the target TCS + range
+	//If the area of the mask is below the target mask size + range
 	if (area<limits[0]) {
 
 		print("Selection area is below our lower TCS limit");
@@ -353,34 +700,12 @@ function getMaskStatus(area, currentTCS, TCSRange, touching, stabilised) {
 
 }
 
-function saveGeneratedMask(saveLoc) {
-
-	selectWindow("Connected");
-	run("Select None");
-	saveAs("tiff", saveLoc);
-	selectWindow(File.getName(saveLoc));
-	rename("Connected");
-
-}
-
-//Function to check if the inputValue is above the topLimit - this is so that if 
-//our thresholding calculated value ends up above the highest grey value in the 
-//image then we set inputValue to that top value
-function valueCheck(inputValue, topLimit) {
-	
-	if(inputValue>=topLimit) {
-		print("Value is above our limit, setting to our limit - 1");
-		inputValue = topLimit-1;
-	} else {
-		print("Value is within our limits");
-	}
-
-	//We want a rounded threshold value since the images are in 8-bit, so we do 
-	//that before returning it
-	return round(inputValue);
-}
-
+//Function to calculate the next threshold to use for iterative thresholding
 function calculateNextThreshold(t1, a1, ms, n) {
+	//T1 is the current threshold
+	//A1 is the current mask area
+	//MS is the target mask size
+	//N is the number of iterations thus far
 
 	firstClause = t1;
 	secondClause = t1 * ((a1 - ms) / (n * ms));
@@ -388,31 +713,6 @@ function calculateNextThreshold(t1, a1, ms, n) {
 	nextThresholdRaw = firstClause + secondClause;
 
 	return nextThresholdRaw;
-
-}
-
-function substacksToUse(substackTableLoc, nameCol, processedCol, QCCol) {
-
-	print("Retrieving the substacks that are ready for mask generation");
-
-	//We return an array of substack names to use if they have been processed an QAs
-	substackNames = getTableColumn(substackTableLoc, nameCol);
-	processed = getTableColumn(substackTableLoc, processedCol);
-	qaValue = getTableColumn(substackTableLoc, QCCol);
-
-	output = newArray(1);
-	added = 0;
-	for(currSub = 0; currSub<substackNames.length; currSub++) {
-		if(processed[currSub] == 1 && qaValue[currSub] == 1) {
-			if(added == 0) {
-				output[0] = substackNames[currSub];
-			} else {
-				output = Array.concat(output, newArray(substackNames[currSub]));
-			}
-		}
-	}
-
-	return output;
 
 }
 
@@ -441,226 +741,6 @@ function saveTCSStatusTable(currentSubstack, tcsValue, tcsMasksGenerated, tcsQCC
 	Table.save(saveLoc);
 	selectWindow("TCS Status Substack(" + currentSubstack +").csv");
 	run("Close");
-}
-
-function getWorkingAndStorageDirectories(){
-
-    Dialog.create("Pick Directory");
-    Dialog.addMessage("Choose morphology analysis working directory");
-    Dialog.show();
-
-    setOption("JFileChooser", true);
-    workingDirectory = getDirectory("Choose morphology analysis working directory");
-
-    Dialog.create("Pick Directory");
-    Dialog.addMessage("Choose the image storage directory");
-    Dialog.show();
-    //Get the parent 2P directory i.e. where all the raw 2P images are stored
-    imageStorage = getDirectory("Choose the image storage directory");
-    setOption("JFileChooser", false);
-
-    //Here we create an array to store the full name of the directories we'll be 
-    //working with within our morphology processing directory
-    directories=newArray(workingDirectory+"Input" + File.separator, 
-						workingDirectory+"Output" + File.separator, 
-						workingDirectory+"Done" + File.separator,
-						imageStorage);
-    //[0] is input, [1] is output, [2] is done, [3] is image storage
-
-    directoriesNames = newArray('Input', 'Output', 'Done', 'Image Storage');
-    for (i = 0; i < directories.length; i++) {
-		print('Directories', directoriesNames[i], ':',  directories[i]);
-    }
-
-    images_in_storage = listFilesAndFilesSubDirectories(directories[3], '.tif');
-    if(images_in_storage.length == 0) {
-    	exit('No .tif images in image storage, exiting plugin');
-    }
-
-    return directories;
-}
-
-//Function finds all files that contain "substring" in the path "directoryname" 
-//"fileLocations" is an array that is passed in to fill with paths that contain substring
-function listFilesAndFilesSubDirectories(directoryName, subString) {
-
-	//Get the list of files in the directory
-	listOfFiles = getFileList(directoryName);
-
-	//an array to add onto our fileLocations array to extend it so we can keep adding to it
-	arrayToConcat = newArray(1);
-    fileLocations = newArray(1);
-
-	//Loop through the files in the file list
-	for (i=0; i<listOfFiles.length; i++) {
-
-		//Create a string of the full path name
-		fullPath = directoryName+listOfFiles[i];
-		
-		//If the file we're checking is a file and not a directory and if it  contains the substring we're 
-		//interested in within its full path we check  against the absolute path of our file in lower case on both counts
-		if (File.isDirectory(fullPath)==0 && indexOf(toLowerCase(fullPath), toLowerCase(subString))>-1) {
-			
-			//We store the full path in the output fileLocations at the latest index 
-			//(end of the array) and add an extra bit onto the Array so we can keep filling it
-			fileLocations = Array.concat(fileLocations, arrayToConcat);
-			currentIndex=fileLocations.length-1;
-			fileLocations[currentIndex] = fullPath;
-
-		//If the file we're checking is a directory, then we run the whole thing on that directory
-		} else if (File.isDirectory(fullPath)==1) {
-
-			//Create a new array to fill whilst we run on this directory and at the end add it onyo the fileLocations array 
-			tempArray = listFilesAndFilesSubDirectories(fullPath, subString);
-			fileLocations = Array.concat(fileLocations, tempArray);     
-			
-		}
-	}
-
-	//Create a new array that we fill with all non zero values of fileLocations
-	output = Array.deleteValue(fileLocations, 0);
-
-	//Then return the output array
-	return output;
-	
-}
-
-function getTableColumn(fileLoc, colName) {
-
-	print("Retrieving the column ", colName, " from the table ", File.getName(fileLoc));
-
-	open(fileLoc);
-	tableName = Table.title;
-	selectWindow(tableName);
-
-	outputArray = Table.getColumn(colName);
-
-	selectWindow(tableName);
-	run("Close");
-
-	return outputArray;
-
-}
-
-
-function findFileWithFormat(folder, fileFormat) {
-
-	//We get the list of files in the folder
-	fileList = getFileList(folder);
-	
-	//Create an array to store our locations and a counter for how many files we've found
-	storeIt = newArray(1);
-	storeIt[0] = 'none';
-	count = 0;
-	for(i=0; i<fileList.length; i++) {
-		if(endsWith(toLowerCase(fileList[i]), fileFormat)) {
-			//Create a variable that tells us which file has the format we're looking for
-			fileLocation = folder + fileList[i]; 
-			
-			//If we're onto our second location, create a new array to tack onto storeIt that we then
-			//fill with the new location
-			if(count >0) {
-				appendArray = newArray(1);
-				storeIt = Array.concat(storeIt, appendArray);
-			}
-			
-			//Store the location and increase the count
-			storeIt[count] = fileLocation;
-			count += 1;
-		}
-	}
-
-	if(storeIt[0] == 'none') {
-		exit("No file found");
-	} else {
-		return storeIt;
-	}
-
-}
-
-//This is a function to retrieve the data from the ini file. The ini file contains calibration information for the 
-//entire experiment that we use to calibrate our images. iniFolder is the folder within which the ini file is located, 
-//and iniValues is an array we pass into the function that we fill with calibration values before returning it	
-function getIniData(iniFolder, iniStrings) {
-
-	print("Retrieving .ini data");
-
-	//Find our ini file
-	iniLocations = findFileWithFormat(iniFolder, "ini");
-	if(iniLocations.length > 1) {
-		exit("More than 1 ini file found, exiting plugin");
-	} else {
-		print(".ini file found at", iniLocations[0]);
-		iniToOpen = iniLocations[0];
-	}
-
-	iniValues = parseIniValues(iniStrings, iniToOpen);
-		
-	return iniValues;
-}
-
-function parseIniValues(iniStrings, iniToOpen) {
-		
-	//We open the ini file as a string
-	iniText = File.openAsString(iniToOpen);	
-	
-	iniValues = newArray(iniStrings.length);
-
-	//Looping through the values we want to grab
-	for(i=0; i<iniStrings.length; i++) {
-
-		//We create a start point that is the index of our iniStrings + the length of the string
-		startPoint = indexOf(iniText, iniStrings[i])+lengthOf(iniStrings[i]);
-
-		//Get a substring that starts at our startPoint i.e. where the numbers of our current string start
-		checkString = substring(iniText, startPoint);
-
-		//For each character, if it isn't numeric add 1 to the hitCount and if we hit
-		//two consecutive non-numerics, go back to pull out the values and store them
-		hitCount = 0;
-		for(j=0; j<lengthOf(checkString); j++) {
-			if(charCodeAt(checkString, j) < 48 || charCodeAt(checkString, j) > 57) {
-				hitCount = hitCount + 1;
-				if(hitCount == 2) {
-					realString = substring(checkString, 0, j);
-					break;
-				}
-			}
-		}
-
-		//Parse our values
-		iniValues[i] = parseFloat(realString);
-	}
-
-	return iniValues;
-
-}
-
-function getOrCreateTableColumn(tableLoc, columnName, defaultValue, defaultLength) {
-	if(File.exists(tableLoc) == 1) {
-		outputArray = getTableColumn(tableLoc, columnName);
-	} else {
-		print("Table doesn't exist; creating array with default value of default length");
-		outputArray = newArray(defaultLength);
-		Array.fill(outputArray, defaultValue);
-	}
-
-	return outputArray;
-}
-
-function makeDirectories(directories) {
-
-    //Here we make our working directories by looping through our folder names, 
-    //concatenating them to our main parent directory
-    //and making them if they don't already exist
-    for(i=0; i<directories.length; i++) {
-        if(File.exists(directories[i])==0) {
-            File.makeDirectory(directories[i]);
-            print('Made directory ', directories[i]);
-        } else {
-        	print('Directory', directories[i], 'already exists');
-        }
-    }
 }
 
 function saveSubstackCoordinatesLocTable(xCoords, yCoords, xOpt, yOpt, optimalThreshold, saveLoc) {
@@ -701,20 +781,10 @@ function makeOrRetrieveLR(lrSaveLoc, LRCoords, LRLengthPixels, avgProjImageLoc) 
 		createLRImage(avgProjImageLoc, LRCoords, newArray(LRLengthPixels, LRLengthPixels));
 
 		//Now that we're certain we've got the optimal coordinates, we save our LR image
-		saveLRImage(lrSaveLoc);
+		saveImage("LR", lrSaveLoc)
 
 	}
 
-}
-
-function returnMaxAtPoint(xPoint, yPoint, windowName) {
-	selectWindow(windowName);
-	run("Select None");
-	makePoint(xPoint, yPoint);
-	topValue = getValue("Max");
-	run("Select None");
-
-	return topValue;
 }
 
 function findOrRetrieveOptimalCoordinates(avgProjImageLoc, LRCoords, xCoords, yCoords, xOpt, yOpt, optimalThreshold, currCell, substackCoordinatesLoc) {
@@ -724,11 +794,7 @@ function findOrRetrieveOptimalCoordinates(avgProjImageLoc, LRCoords, xCoords, yC
 
 		print("Generating optimal coordinates for mask generation");
 
-		//Here if we've already made the LR image, no need to remake it - just load it in
-		//Also, if we already have the optimal coordinate for that local region, save it in a table rather than
-		//recalculating
-		//Save optimal coordinates in the CP coordinate for substack table
-
+		//Get the otsu value of our local region
 		initialThreshold = getOtsuValue(avgProjImageLoc, xCoords[currCell], yCoords[currCell]);
 
 		print("Initial threshold value of " + initialThreshold);
@@ -744,25 +810,27 @@ function findOrRetrieveOptimalCoordinates(avgProjImageLoc, LRCoords, xCoords, yC
 		xOpt[currCell] = maximaCoordinates[0];
 		yOpt[currCell] = maximaCoordinates[1];
 
+		//Get the value of the maxima
 		topValue = returnMaxAtPoint(xOpt[currCell], yOpt[currCell], "LR");
 
+		//Check if our initial threshold is above our maxima, and  if so adjust it
 		optimalThreshold[currCell] = valueCheck(initialThreshold, topValue);
 
+		//Store our optimal coordinates, our threshold, and our maxima value, in an output array
 		lrCoordinateValues = newArray(xOpt[currCell], yOpt[currCell], optimalThreshold[currCell], topValue);
 
+		//Save our substack coordinates loc table with the new values
 		saveSubstackCoordinatesLocTable(xCoords, yCoords, xOpt, yOpt, optimalThreshold, substackCoordinatesLoc);
 	
-	//Else, store them
+	//Else, retrieve them
 	} else {
 
 		print("Using existing optimal coordinates for mask generation");
 
-		selectWindow("LR");
-		run("Select None");
-		makePoint(xOpt[currCell], yOpt[currCell]);
-		topValue = getValue("Max");
-		run("Select None");
+		//Get the value at our optimal coordinates
+		topValue = returnMaxAtPoint(xOpt[currCell], yOpt[currCell], "LR");
 
+		//Store everything in the output array
 		lrCoordinateValues = newArray(xOpt[currCell], yOpt[currCell], optimalThreshold[currCell], topValue);
 	}
 
@@ -771,12 +839,14 @@ function findOrRetrieveOptimalCoordinates(avgProjImageLoc, LRCoords, xCoords, yC
 }
 
 function getSubstacksToUse(directories, imageNameRaw) {
-		
+	
+	//Read in our substacks table
 	statusTable = directories[1]+imageNameRaw+"/Cell Coordinate Masks/Cell Position Marking.csv";
 	if(File.exists(statusTable) != 1) {
 		exit("Run cell detection first");
 	}
 
+	//Get out an array of substacks to iterate through
 	substackNames = substacksToUse(statusTable, 'Substack', 'Processed', 'QC');
 
 	return substackNames;
@@ -784,10 +854,12 @@ function getSubstacksToUse(directories, imageNameRaw) {
 
 function populateTCSValueArray(tcsValue, numberOfLoops, selection) {
 
+	//If we haven't populated our TCS value array with TCS values yet
 	if(tcsValue[0] == -1) {
 
 		print("Not previously attempted mask generation for this substack");
 
+		//Populate our array with TCS values
 		for(TCSLoops=0; TCSLoops<numberOfLoops; TCSLoops++) {
 			tcsValue[TCSLoops] = selection[0]+(selection[3]*TCSLoops);
 		}
@@ -816,6 +888,8 @@ function iterativeThresholding(nextIteration, initialThreshold, firstArea, tcsVa
 		loopCount++; //Each iteration we increase loopCount, this modifies how we alter the threshold value
 
 		//This variable stores the next threshold value we'll use based on a formula outlined later
+		//If we're on our first iteration, use the initial threshold and firstArea inputs
+		//Else use the previously calculated iterative values
 		if(loopCount == 1) {
 			t1 = initialThreshold;
 			a1 = firstArea;
@@ -843,7 +917,7 @@ function iterativeThresholding(nextIteration, initialThreshold, firstArea, tcsVa
 		//maximal pixel value
 		nextThreshold = valueCheck(nextThresholdRaw, topValue);
 
-		//Here we get another area from our find connected regions
+		//Here we get the area from our find connected regions
 		//print("otsu to check: ", otsuVariables[1]);
 		//print("bottom value: ", bottomValue);
 		//print("top value: ", topValue);
@@ -854,7 +928,7 @@ function iterativeThresholding(nextIteration, initialThreshold, firstArea, tcsVa
 		print("Previous area was ", a1);
 		
 		//If we get the same area for 3 iterations we exit the iterative process, so here we count identical areas 
-		//(but if for any one instance they are not identical, we rest the counter)
+		//(but if for any one instance they are not identical, we reset the counter)
 		if (areaNew==a1){
 			print("Areas are the same");
 			stabilisedCount++;
@@ -983,6 +1057,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 				maskQA = getOrCreateTableColumn(cellMaskTable, "Mask QA", -1, xCoords.length);
 				maskQuant = getOrCreateTableColumn(cellMaskTable, "Mask Quantified", -1, xCoords.length);
 
+				//If we're after our first TCS loop
 				if(TCSLoops > 0) {
 					print("Masks generated for previous TCS value");
 					prevTCSDir = directories[1]+imageNameRaw+"/"+"TCS"+tcsValue[TCSLoops-1]+"/";
@@ -990,16 +1065,17 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 					prevTCSDir = 'none';
 				}
 
+				//Get previous mask success statuses as if they failed at a lower TCS, they will fail at a higher value so
+				//no point attempting them
 				prevTCSCellMaskTable = prevTCSDir + "Substack (" + substackNames[currSubstack] + ") Mask Generation.csv";
 				prevMaskSuccess = getOrCreateTableColumn(prevTCSCellMaskTable, "Mask Success", 1, xCoords.length);
 
 				//We now loop through all the cells for this substack and TCS value
 				for(currCell=0; currCell<xCoords.length; currCell++) {
 
-					imageNamesArray = makeImageNamesArray(directories, imageNameRaw, substackNames[currSubstack], xCoords[currCell], yCoords[currCell]);
-					//[0] is saveName, [1] is fileName, [2] is LRName
+					rawCellName = substackNames[currSubstack] + " x " + xCoords[currCell] +  " y " + yCoords[currCell] + " .tif";
 
-					maskName[currCell] = File.getName(imageNamesArray[0]);
+					maskName[currCell] = "Candidate mask for " + rawCellName;
 				
 					//If we haven't tried to make a mask for this image, and it didn't fail at a smaller TCS value (if it failed at a previous value, it
 					//won't succeed at a higher one) then we proceed with mask generation
@@ -1016,7 +1092,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 						fiveMicronsInPixels=5*(1/iniValues[0]);
 						
 						avgProjImageLoc = directories[1]+imageNameRaw+"/Cell Coordinate Masks/CP mask for " + substackFileSuffix + ".tif";
-						openAndCalibrateAvgProjImage(avgProjImageLoc, iniValues);
+						openAndCalibrateImage(avgProjImageLoc, iniValues);
 						proceed = coordinatesWithinBuffer(avgProjImageLoc, xCoords[currCell], yCoords[currCell], fiveMicronsInPixels);	
 
 						//If the y coordinate isn't less than 5 microns from the bottom or top edges of the image, and the x coordinate isn't less than 5 pixels from the width, then we
@@ -1033,7 +1109,9 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 							//Making and saving local regions, running first Otsu method and getting initial value on which to base iterative process	
 							print("Coordinate number " + (currCell+1) + "/" + xCoords.length);
 
-							lrSaveLoc = directories[1] + imageNameRaw + "/" + "Local Regions/" + imageNamesArray[2];
+							lrImageName = "Local region for " + rawCellName;
+
+							lrSaveLoc = directories[1] + imageNameRaw + "/" + "Local Regions/" + lrImageName;
 
 							LRCoords = getLRCoords(avgProjImageLoc, newArray(xCoords[currCell], yCoords[currCell]), LRLengthPixels);
 
@@ -1070,8 +1148,8 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 							//If the mask has passed, save it
 							if(nextIteration == 0) {
 								print("Mask successfully generated; saving");
-								maskSaveLoc = TCSMasks + imageNamesArray[1];
-								saveGeneratedMask(maskSaveLoc);
+								maskSaveLoc = TCSMasks + maskName[currCell];
+								saveImage("Connected", maskSaveLoc);
 								maskSuccess[currCell] = 1;
 							}
 							

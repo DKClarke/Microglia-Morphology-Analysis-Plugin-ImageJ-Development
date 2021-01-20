@@ -8,5 +8,5 @@ The functions in this plugin will only function as part of a pipeline and will r
 
 Next iterations of this plugin will introduce functions that can be applied outside of the pipeline on single images to facilitate users building their own pipelines using the image cleaning, cell detection, and mask quantification features available.
 
-This repo is based on a forked repo designed to convert a collection of ImageJ script .ijm files into a plugin. The README for that forked repo is now in the Legacy readme.md file.
+This repo is based on a repo designed to convert a collection of ImageJ script .ijm files into a plugin (https://github.com/imagej/example-script-collection). The README for that forked repo is now in the Legacy readme.md file.
 

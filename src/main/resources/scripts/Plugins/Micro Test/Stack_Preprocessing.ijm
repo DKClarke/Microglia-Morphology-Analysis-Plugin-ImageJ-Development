@@ -1,95 +1,5 @@
-function findFileWithFormat(folder, fileFormat) {
-
-	//We get the list of files in the folder
-	fileList = getFileList(folder);
-	
-	//Create an array to store our locations and a counter for how many files we've found
-	storeIt = newArray(1);
-	storeIt[0] = 'none';
-	count = 0;
-	for(i=0; i<fileList.length; i++) {
-		if(endsWith(toLowerCase(fileList[i]), fileFormat)) {
-			//Create a variable that tells us which file has the format we're looking for
-			fileLocation = folder + fileList[i]; 
-			
-			//If we're onto our second location, create a new array to tack onto storeIt that we then
-			//fill with the new location
-			if(count >0) {
-				appendArray = newArray(1);
-				storeIt = Array.concat(storeIt, appendArray);
-			}
-			
-			//Store the location and increase the count
-			storeIt[count] = fileLocation;
-			count += 1;
-		}
-	}
-
-	if(storeIt[0] == 'none') {
-		exit("No file found");
-	} else {
-		return storeIt;
-	}
-
-}
-
-function parseIniValues(iniStrings, iniToOpen) {
-		
-	//We open the ini file as a string
-	iniText = File.openAsString(iniToOpen);	
-	
-	iniValues = newArray(iniStrings.length);
-
-	//Looping through the values we want to grab
-	for(i=0; i<iniStrings.length; i++) {
-
-		//We create a start point that is the index of our iniStrings + the length of the string
-		startPoint = indexOf(iniText, iniStrings[i])+lengthOf(iniStrings[i]);
-
-		//Get a substring that starts at our startPoint i.e. where the numbers of our current string start
-		checkString = substring(iniText, startPoint);
-
-		//For each character, if it isn't numeric add 1 to the hitCount and if we hit
-		//two consecutive non-numerics, go back to pull out the values and store them
-		hitCount = 0;
-		for(j=0; j<lengthOf(checkString); j++) {
-			if(charCodeAt(checkString, j) < 48 || charCodeAt(checkString, j) > 57) {
-				hitCount = hitCount + 1;
-				if(hitCount == 2) {
-					realString = substring(checkString, 0, j);
-					break;
-				}
-			}
-		}
-
-		//Parse our values
-		iniValues[i] = parseFloat(realString);
-	}
-
-	return iniValues;
-
-}
-
-//This is a function to retrieve the data from the ini file. The ini file contains calibration information for the 
-//entire experiment that we use to calibrate our images. iniFolder is the folder within which the ini file is located, 
-//and iniValues is an array we pass into the function that we fill with calibration values before returning it	
-function getIniData(iniFolder, iniStrings) {
-
-	//Find our ini file
-	iniLocations = findFileWithFormat(iniFolder, "ini");
-	if(iniLocations.length > 1) {
-		exit("More than 1 ini file found, exiting plugin");
-	} else {
-		print(".ini file found at", iniLocations[0]);
-		iniToOpen = iniLocations[0];
-	}
-
-	iniValues = parseIniValues(iniStrings, iniToOpen);
-		
-	return iniValues;
-}
-
 function getWorkingAndStorageDirectories(){
+	//Asks the user to point us to their working and image storage directories
 
     Dialog.create("Pick Directory");
     Dialog.addMessage("Choose morphology analysis working directory");
@@ -103,7 +13,11 @@ function getWorkingAndStorageDirectories(){
     Dialog.show();
     //Get the parent 2P directory i.e. where all the raw 2P images are stored
     imageStorage = getDirectory("Choose the image storage directory");
-    setOption("JFileChooser", false);
+	setOption("JFileChooser", false);
+	
+	if(workingDirectory == imageStorage) {
+		exit("Selected the same directory for 'Working' and 'Image Storage'");
+	}
 
     //Here we create an array to store the full name of the directories we'll be 
     //working with within our morphology processing directory
@@ -118,91 +32,8 @@ function getWorkingAndStorageDirectories(){
 		print('Directories', directoriesNames[i], ':',  directories[i]);
     }
 
-    images_in_storage = listFilesAndFilesSubDirectories(directories[3], '.tif');
-    if(images_in_storage.length == 0) {
-    	exit('No .tif images in image storage, exiting plugin');
-    }
-
     return directories;
 }
-
-function makeDirectories(directories) {
-
-    //Here we make our working directories by looping through our folder names, 
-    //concatenating them to our main parent directory
-    //and making them if they don't already exist
-    for(i=0; i<directories.length; i++) {
-        if(File.exists(directories[i])==0) {
-            File.makeDirectory(directories[i]);
-            print('Made directory ', directories[i]);
-        } else {
-        	print('Directory', directories[i], 'already exists');
-        }
-    }
-}
-
-//This function clears the results table if it exists, clears the roimanager, and closes 
-//all open images - useful for quickly clearing the workspace
-function Housekeeping() {
-	
-	if (isOpen("Results")) {
-		run("Clear Results");
-	}
-	if(roiManager("count")>0) {
-		roiManager("deselect");
-		roiManager("delete");
-	}
-	if(nImages>0) {
-		run("Close All");
-	}
-}
-
-function getPreprocessingInputs() {
-
-	//Store the defaults and strings for the input we require
-    inputs_array = newArray(1, 3, false, 'Morphology');
-    inputs_labels = newArray("How many frames per Z plane to average over for the final Z plane image?",
-    	"How many frames do you want to include in the average projection of least blurry frames?",
-    	"Manually select frames to keep from images that failed automated selection QA?",
-    	"String to Search For in the Image Storage Directory", "Morphology");
-
-    //Ask the user how many frames they want to retain for motion correction and how many frames they want to use
-    //to make the average projection to compare other frames to (lapFrames) - also ask if the user would rather select
-    //the frames to use manually 
-    Dialog.create("Info for each section");
-	for (i = 0; i < inputs_array.length; i++) {
-		if(i == 0 || i == 1){
-			Dialog.addNumber(inputs_labels[i], inputs_array[i]);
-		} else if (i==2) {
-			Dialog.addCheckbox(inputs_labels[i], inputs_array[i]);
-		} else if (i == 3) {
-			Dialog.addString(inputs_labels[i], inputs_array[i]);
-		}
-	}
-    Dialog.show();
-
-	//Overwrite our defaults with the input values, and apply exit conditions and print
-	for (i = 0; i < inputs_array.length; i++) {
-		if(i == 0 || i == 1){
-			inputs_array[i] = Dialog.getNumber();
-			if(inputs_array[i] == 0) {
-				exit("Specified an input as zero - this is not permitted");
-			}
-		} else if (i==2) {
-			inputs_array[i] = Dialog.getCheckbox();
-		} else if (i == 3) {
-			inputs_array[i] = Dialog.getString();
-		}
-		print(inputs_labels[i], ':', inputs_array[i]);
-	}
-
-    return inputs_array;
-    //[0] is differenceFrames, [1] is blurFrames, [2] is manSelect, [3] is stringToFind
-
-}
-
-//This function takes an input array, and removes all the 0's in it, outputting 
-//it as the output array which must be passed in as an argument
 
 //Function finds all files that contain "substring" in the path "directoryname" 
 //"fileLocations" is an array that is passed in to fill with paths that contain substring
@@ -248,6 +79,212 @@ function listFilesAndFilesSubDirectories(directoryName, subString) {
 	return output;
 	
 }
+
+function getTableColumn(fileLoc, colName) {
+	//Open the table at fileLoc, retrieve the colName column, if it doesn't exist,
+	//return an array the size of the table filled with -1
+
+	print("Retrieving the column ", colName, " from the table ", File.getName(fileLoc));
+
+	if(File.exists(fileLoc) != 1) {
+		exit("Table " + fileLoc + "doesn't exist");
+	}
+
+	open(fileLoc);
+	tableName = Table.title;
+	selectWindow(tableName);
+
+	//If our column exists
+	columns = Table.headings;
+	if(indexOf(columns, colName) > -1) {
+		outputArray = Table.getColumn(colName);
+	
+	//Else
+	} else {
+		outputArray = newArray(Table.size);
+		Array.fill(outputArray, -1);
+	}
+
+	selectWindow(tableName);
+	run("Close");
+
+	return outputArray;
+
+}
+
+function findFileWithFormat(folder, fileFormat) {
+	//Look for a file with the format fileFormat in folder
+
+	//We get the list of files in the folder
+	fileList = getFileList(folder);
+	
+	//Create an array to store our locations and a counter for how many files we've found
+	storeIt = newArray(1);
+	storeIt[0] = 'none';
+	count = 0;
+	for(i=0; i<fileList.length; i++) {
+		if(endsWith(toLowerCase(fileList[i]), fileFormat)) {
+			//Create a variable that tells us which file has the format we're looking for
+			fileLocation = folder + fileList[i]; 
+			
+			//If we're onto our second location, create a new array to tack onto storeIt that we then
+			//fill with the new location
+			if(count >0) {
+				appendArray = newArray(1);
+				storeIt = Array.concat(storeIt, appendArray);
+			}
+			
+			//Store the location and increase the count
+			storeIt[count] = fileLocation;
+			count += 1;
+		}
+	}
+
+	if(storeIt[0] == 'none') {
+		print("No file found");
+		return newArray('Not found');
+	} else {
+		return storeIt;
+	}
+
+}
+
+//This is a function to retrieve the data from the ini file. The ini file contains calibration information for the 
+//entire experiment that we use to calibrate our images. iniFolder is the folder within which the ini file is located, 
+//and iniValues is an array we pass into the function that we fill with calibration values before returning it	
+function getIniData(iniFolder, iniStrings) {
+
+	print("Retrieving .ini data");
+
+	//Find our ini file
+	iniLocations = findFileWithFormat(iniFolder, "ini");
+	if(iniLocations.length > 1) {
+		exit("More than 1 ini file found, exiting plugin");
+	} else if(iniLocations[0] != 'Not found') {
+		print(".ini file found at", iniLocations[0]);
+		iniToOpen = iniLocations[0];
+	} else if(iniLocations[0] == 'Not found') {
+		exit("No ini file found for calibration");
+	}
+
+	iniValues = parseIniValues(iniStrings, iniToOpen);
+		
+	return iniValues;
+}
+
+function parseIniValues(iniStrings, iniToOpen) {
+	//Parse our ini values from the strings in the ini file
+		
+	//We open the ini file as a string
+	iniText = File.openAsString(iniToOpen);	
+	
+	iniValues = newArray(iniStrings.length);
+
+	//Looping through the values we want to grab
+	for(i=0; i<iniStrings.length; i++) {
+
+		//We create a start point that is the index of our iniStrings + the length of the string
+		startPoint = indexOf(iniText, iniStrings[i])+lengthOf(iniStrings[i]);
+
+		//Get a substring that starts at our startPoint i.e. where the numbers of our current string start
+		checkString = substring(iniText, startPoint);
+
+		//For each character, if it isn't numeric add 1 to the hitCount and if we hit
+		//two consecutive non-numerics, go back to pull out the values and store them
+		hitCount = 0;
+		for(j=0; j<lengthOf(checkString); j++) {
+			if(charCodeAt(checkString, j) < 48 || charCodeAt(checkString, j) > 57) {
+				hitCount = hitCount + 1;
+				if(hitCount == 2) {
+					realString = substring(checkString, 0, j);
+					break;
+				}
+			}
+		}
+
+		//Parse our values
+		iniValues[i] = parseFloat(realString);
+	}
+
+	return iniValues;
+
+}
+
+function makeDirectories(directories) {
+
+    //Here we make our working directories by looping through our folder names, 
+    //concatenating them to our main parent directory
+    //and making them if they don't already exist
+    for(i=0; i<directories.length; i++) {
+        if(File.exists(directories[i])==0) {
+            File.makeDirectory(directories[i]);
+            print('Made directory ', directories[i]);
+        } else {
+        	print('Directory', directories[i], 'already exists');
+        }
+    }
+}
+
+//This function clears the results table if it exists, clears the roimanager, and closes 
+//all open images - useful for quickly clearing the workspace
+function Housekeeping() {
+	
+	if (isOpen("Results")) {
+		run("Clear Results");
+	}
+	if(roiManager("count")>0) {
+		roiManager("deselect");
+		roiManager("delete");
+	}
+	if(nImages>0) {
+		run("Close All");
+	}
+}
+
+function getPreprocessingInputs() {
+
+	//Store the defaults and strings for the input we require
+    inputs_array = newArray(1, 3, false, 'Morphology');
+    inputs_labels = newArray("How many of the 'best' frames per Z plane do you want to include in the final Z plane image?",
+    	"How many frames do you want to include in the average projection of least blurry frames per Z plane?",
+    	"If you have already run the 'Stack QA' module, do you want to manually select frames to keep from images that failed automated selection QA in this run?",
+    	"What string should we search for in the Image Storage directory to find stacks to process?");
+
+    //Ask the user how many frames they want to retain for motion correction and how many frames they want to use
+    //to make the average projection to compare other frames to (lapFrames) - also ask if the user would rather select
+    //the frames to use manually 
+    Dialog.create("Info for each section");
+	for (i = 0; i < inputs_array.length; i++) {
+		if(i == 0 || i == 1){
+			Dialog.addNumber(inputs_labels[i], inputs_array[i]);
+		} else if (i==2) {
+			Dialog.addCheckbox(inputs_labels[i], inputs_array[i]);
+		} else if (i == 3) {
+			Dialog.addString(inputs_labels[i], inputs_array[i]);
+		}
+	}
+    Dialog.show();
+
+	//Overwrite our defaults with the input values, and apply exit conditions and print
+	for (i = 0; i < inputs_array.length; i++) {
+		if(i == 0 || i == 1){
+			inputs_array[i] = Dialog.getNumber();
+			if(inputs_array[i] == 0) {
+				exit("Specified an input as zero - this is not permitted");
+			}
+		} else if (i==2) {
+			inputs_array[i] = Dialog.getCheckbox();
+		} else if (i == 3) {
+			inputs_array[i] = Dialog.getString();
+		}
+		print(inputs_labels[i], ':', inputs_array[i]);
+	}
+
+    return inputs_array;
+    //[0] is differenceFrames, [1] is blurFrames, [2] is manSelect, [3] is stringToFind
+
+}
+
 
 function parseAnimalTreatmentIDsFromStoragePath(imagePathInStorage) {
 
@@ -302,8 +339,8 @@ function getManualFlaggedImages(imageName, autoProcessed, autoPassedQA, manualPr
 	print("Retrieving image IDs to manually select frames for");
 	imagesForMan = newArray('false');
 	count = 0;
-	//If an image has a manual flag or is set to be ignored, 
-	//flag it's image List values with a 0 then remove
+
+	//If an image is set to be manually processed, add it to the imagesForMan array
 	for(currImage = 0; currImage<autoProcessed.length; currImage++) {
 		
 		//If the image has previously been automatically processed
@@ -341,49 +378,9 @@ function getManualFlaggedImages(imageName, autoProcessed, autoPassedQA, manualPr
 
 }
 
-//"OutputArray" is an array in which we store the output of this function
-//InputName is a string file path of an image generated by this macro
-//Function cuts up the file path of the inputName into different segments that
-//contain different bits of info i.e. info about the animal and 
-//timepoint that we store at index [0] in the array, the timepoint only at [1]
-//the animal only at [2] and finally the file name without the .tif on the end that we store at [3]
-function getAnimalTimepointInfo(inputName, appendWith) {
-  
-  outputArray = newArray(4);
-
-  //For some reason we need to convert these strings to strings else the function doesn't work
-  outputArray[0] = File.getName(substring(inputName, 0, indexOf(inputName, appendWith)));
-  outputArray[1] = toLowerCase(substring(outputArray[0], indexOf(outputArray[0], " ")+1));
-  outputArray[2] = toLowerCase(substring(outputArray[0], 0, indexOf(outputArray[0], " ")));
-  outputArray[3] = File.getNameWithoutExtension(inputName);
-
-  return outputArray;
-
-}
-
-function openAndGetImageTimepoints(imagePath, calibrationValues, appendWith) {
-
-    open(imagePath);
-            
-    //Get out the animal name info - animal and 
-    //timepoint that we store at index [0] in the array, the timepoint only at [1]
-    //the animal only at [2] and finally the file name without the .tif on the end
-    //that we store at [3]
-    imageNames = getAnimalTimepointInfo(imagePath, appendWith);
-    print(imageNames[3] + " opened");
-
-	//Calculate the number of timepoints in the image by multiplying frames per plane * number of plans, and divide
-	//that by the number of slices in the image
-	selectWindow(File.getName(imagePath));
-    timepoints = (calibrationValues[3] * calibrationValues[4])/nSlices;
-
-    return timepoints;
-
-}
-
-function formatManualSelectionImage(imagePath, timepoints) {
+function formatManualSelectionImage(imagePath) {
    
-   //Convert the image to 8-bit, then adjust the contrast across all slices 
+    //Convert the image to 8-bit, then adjust the contrast across all slices 
     //to normalise brightness to that of the top slice in the image
 	selectWindow(File.getName(imagePath));
 	slices = nSlices;
@@ -392,9 +389,9 @@ function formatManualSelectionImage(imagePath, timepoints) {
 
     //Here we reorder our input image so that the slices are in the right structure for motion artefact removal
     print("Reordering for manual frame selection");
-    run("Stack to Hyperstack...", "order=xyczt(default) channels=1 slices="+timepoints+" frames="+slices+" display=Color");
+    run("Stack to Hyperstack...", "order=xyczt(default) channels=1 slices=1 frames="+slices+" display=Color");
     run("Hyperstack to Stack");
-    run("Stack to Hyperstack...", "order=xyczt(default) channels=1 slices="+slices+" frames="+timepoints+" display=Color");
+    run("Stack to Hyperstack...", "order=xyczt(default) channels=1 slices="+slices+" frames=1 display=Color");
 
 }
 
@@ -414,6 +411,8 @@ function getArrayOneToMaxValue(maxValue) {
 
 function makeZPlaneSubstack(framesPerPlan, zPlane, parentImage) {
 
+		//Compute what our start adn end slices should be to get all the frames
+		//for this Z plane
 		startFrame = (framesPerPlane * (zPlane - 1)) + 1;
 		endFrame = (framesPerPlane * zPlane);
 
@@ -431,6 +430,7 @@ function makeZPlaneSubstack(framesPerPlan, zPlane, parentImage) {
 
 function selectFramesManually(noFramesToSelect, imageName) {
 
+	//Select our image
 	selectWindow(imageName);
 	subSlices = nSlices;
     	
@@ -442,7 +442,9 @@ function selectFramesManually(noFramesToSelect, imageName) {
 	run("Tile");
 
     //Looping through the number of frames the user selected to keep, ask the user to
-    //scroll to a frame to retain, the index of this frame in framesToKeep is then set to 1
+	//scroll to a frame to retain, if that frame is retained, at the index in
+	//framesToKeepArray that matches the index of the slice in this image, we replace
+	//0 with the frame number
     for(currFrame=0; currFrame < noFramesToSelect; currFrame++) {
             
 		selectWindow(imageName);
@@ -466,6 +468,7 @@ function populateAndSaveSlicesToUseFile(slicesToUseFile, arrayOfChosenSlices) {
 	tableName = File.getNameWithoutExtension(slicesToUseFile);
 	
 	//Save our array in a csv file so we can read this in later
+	//Save the array of slices we've chosen to keep
 	Table.create(tableName);
 	selectWindow(tableName);
 	Table.setColumn("Slices", arrayOfChosenSlices);
@@ -477,35 +480,36 @@ function populateAndSaveSlicesToUseFile(slicesToUseFile, arrayOfChosenSlices) {
 	//Save our table
 	Table.save(slicesToUseFile);
 
-	actualTableName = Table.title;
-
-	//Since we save it every time, we have to rename it to get rid of the .csv 
-	if(actualTableName != tableName) {
-		Table.rename(actualTableName,tableName);
-	}
-		
-	selectWindow(tableName);
+	//Close our table
+	actualTableName = Table.title;		
+	selectWindow(actualTableName);
 	run("Close");
 
 }
 
-function manuallyApproveZPlanes(framesPerPlane, zPlane, renameAs, framesToKeep) {
+function manuallyApproveZPlanes(framesPerPlane, zPlane, framesToKeep) {
 
-	subName = makeZPlaneSubstack(framesPerPlane, zPlane, renameAs);
+	//Create our substack of all frames at this z plane from the image renameAs
+	subName = makeZPlaneSubstack(framesPerPlane, zPlane, "Timepoint");
 
+	//Select the frames to retain from this substack and return this as an array
 	manualFramesToKeep = selectFramesManually(framesToKeep, subName);
 
+	//Close our Z plane substack
 	selectWindow(subName);
 	run("Close");
 
+	//Return the frames we chose to keep
 	return manualFramesToKeep;
 
 }
 
-function manuallyApproveTimepoints(toOpen, currentTimepoint, iniValues, framesToKeep, renameAs) {
+function manuallyApproveTimepoints(toOpen, iniValues, framesToKeep) {
 
-	//Get out the current timepoint, split it into a stack for each frame (i.e. 14 stacks of 26 slices)
-	getTimepointStack(toOpen, currentTimepoint, renameAs);
+	//Rename a duplicate of our image as timepoint
+	selectWindow(File.getName(toOpen));
+	run("Duplicate...", "duplicate");
+	rename("Timepoint");
 
 	numberOfZPlanes = iniValues[3];
 	framesPerPlane = iniValues[4];
@@ -513,8 +517,10 @@ function manuallyApproveTimepoints(toOpen, currentTimepoint, iniValues, framesTo
 	//Loop through all Z points in our image
 	for(zPlane=1; zPlane<(numberOfZPlanes + 1); zPlane++) {
 
-		zFramesToKeep = manuallyApproveZPlanes(framesPerPlane, zPlane, renameAs, framesToKeep);
+		//Manually approve the frames at this Z plane
+		zFramesToKeep = manuallyApproveZPlanes(framesPerPlane, zPlane, framesToKeep);
 
+		//Concatenate teh arrays of chosen frames for all these z planes
 		if(zPlane == 1) {
 			finalZFrameImages = zFramesToKeep;
 		} else {
@@ -523,17 +529,16 @@ function manuallyApproveTimepoints(toOpen, currentTimepoint, iniValues, framesTo
 
 	}
 
-	selectWindow(renameAs);
+	//Close our timepoint image
+	selectWindow("Timepoint");
 	run("Close");
 
+	//Return our chosen Z frames
 	return finalZFrameImages;
 
 }
 
-function manualFrameSelection(directories, manualFlaggedImages, iniValues, framesToKeep, appendWith) {
-
-	numberOfZPlanes = iniValues[3];
-	framesPerPlane = iniValues[4];
+function manualFrameSelection(directories, manualFlaggedImages, iniValues, framesToKeep) {
 	
 	//Loop through the files in the manually flagged images array
 	for(i=0; i<manualFlaggedImages.length; i++) {
@@ -551,25 +556,12 @@ function manualFrameSelection(directories, manualFlaggedImages, iniValues, frame
         if(proceed == true) {
 
             print("Manually selecting frames for", File.getNameWithoutExtension(toOpen));
-            
-			//Open the image, get ini values, use to calculate the numbber of timepoints and values
-			//we need to format the stack for manual selection
-            timepoints = openAndGetImageTimepoints(toOpen, iniValues, appendWith);
 
 			//Format the image for manual selection
-			formatManualSelectionImage(toOpen, timepoints);
+			formatManualSelectionImage(toOpen);
 
-			//Reorder each individual timepoint stack in Z so that any out of position slices are positioned correctly 
-			//for motion artifact detection and removal
-            //Go through each timepoint
-            for(currentTimepoint=1; currentTimepoint<timepoints+1; currentTimepoint++) {	
-				
-				renameAs = "Timepoint";
-				timepointFramestoKeep = manuallyApproveTimepoints(toOpen, currentTimepoint, iniValues, framesToKeep, renameAs);
-
-				framesPerTimepoint = framesPerPlane*numberOfZPlanes;
-
-			}
+			//Get our frames to keep from the image
+			timepointFramestoKeep = manuallyApproveTimepoints(toOpen, iniValues, framesToKeep);
 
 			populateAndSaveSlicesToUseFile(slicesToUseFile, timepointFramestoKeep);
 
@@ -585,14 +577,14 @@ function manualFrameSelection(directories, manualFlaggedImages, iniValues, frame
 
 }
 
-function manualFrameSelectionWrapper(directories, manualFlaggedImages, iniValues, framesToKeep, appendWith, manCorrect) {
+function manualFrameSelectionWrapper(directories, manualFlaggedImages, iniValues, framesToKeep, manCorrect) {
 	
 	//If the user wants to manually select frames, and we have images eligibile for this (i.e. not being ignored from analysis or
 	//already manually frames chosen
 	if(manualFlaggedImages[0] != 'false' && manCorrect == 1) {
 
 			print('Beginning manual frame selection');
-			manualFrameSelection(directories, manualFlaggedImages, iniValues, framesToKeep, appendWith);
+			manualFrameSelection(directories, manualFlaggedImages, iniValues, framesToKeep);
 
 	} else if(manualFlaggedImages[0] == 'false') {
 
@@ -606,15 +598,15 @@ function manualFrameSelectionWrapper(directories, manualFlaggedImages, iniValues
 
 }
 
-function imagesToProcess(manualFlaggedImages, directories) {
+function imagesToAutomaticallyProcess(manualFlaggedImages, directories) {
 
 		//For all the images in our input folder, check if they're in our manual flagged images array
 		imagesInput = getFileList(directories[0]);
 		for(currImage = 0; currImage < imagesInput.length; currImage++) {
 			for(currManualCheck = 0; currManualCheck < manualFlaggedImages.length; currManualCheck++){
 
-				//If they're in our manual flagged images array, and they don't have a slices to use file created for them, exclude them
-				if(File.getName(imagesInput[currImage]) == manualFlaggedImages[currManualCheck] && File.exists(directories[1] + File.getNameWithoutExtension(manualFlaggedImages[currManualCheck]) + "/Slices To Use.csv") != 1){
+				//If they're in our manual flagged images array, exclude them
+				if(File.getName(imagesInput[currImage]) == manualFlaggedImages[currManualCheck]){
 					imagesInput[currImage] = 0;
 					break;
 				}
@@ -632,12 +624,18 @@ function stackContrastAdjust(imageName) {
 	//Adjust the contrast in the stack to normalise it across all Z depths and timepoints
 	print("Adjusting Contrast Across Entire Stack");
 	selectWindow(imageName);
+
+	//Convert the image to 8-bit
 	run("8-bit");
 	setSlice(1);
 	run("Stack Contrast Adjustment", "is");
 	stackWindow = getTitle();
+
+	//Close the original image
 	selectWindow(imageName);
 	run("Close");
+
+	//Rename the adjusted image to the original image name
 	selectWindow(stackWindow);
 	rename(imageName);
 	run("8-bit");
@@ -646,7 +644,7 @@ function stackContrastAdjust(imageName) {
 
 function expandCanvas(imageName) {
 
-	//Increase the canvas size of the image by 100 pixels in x and y so that 
+	//Increase the canvas size of the image by 500 pixels in x and y so that 
 	//when we run registration on the image, if the image drifts we don't lose
 	//any of it over the edges of the canvas
 	selectWindow(imageName);
@@ -656,7 +654,7 @@ function expandCanvas(imageName) {
 
 }
 
-//This function removes any elements from an input array that conatins the string '.ini' and returns it
+//This function removes any elements from an input array that conatins the string 'string' and returns it
 function removeStringFromArray(fileLocations, string) {
 
 	for (i = 0; i < fileLocations.length; i++) {
@@ -682,7 +680,7 @@ function blurDetector(zPlaneWindow){
 	selectWindow(zPlaneWindow);
 	run("FeatureJ Laplacian", "compute smoothing=1.0");
 
-	//Close our pre laplacian image and rename our laplacian filtered image
+	//Rename our original image, and our laplacian image
 	selectWindow(zPlaneWindow);
 	rename("toKeep");
 	selectWindow(zPlaneWindow + " Laplacian");
@@ -690,19 +688,22 @@ function blurDetector(zPlaneWindow){
 	imageSlices = nSlices;
 
 	//For each slice in the stack, store the maximum pixel value of the laplacian filtered slice
-	diffArrayAll = getSliceStatistics(zPlaneWindow);
-	maxArray = Array.slice(diffArrayAll, diffArrayAll.length/2);
+	maxArray = getSliceStatistics(zPlaneWindow, "max");
 
 	//Close the laplacian filtered image
 	selectWindow(zPlaneWindow);
 	run("Close");
 
+	//Rename our toKeep image back to its original name
 	selectWindow("toKeep");
 	rename(zPlaneWindow);
 
+	//Return the max grey values of each slice of our laplacian filtered image
 	return maxArray;
 
 }
+
+//We're up to here in terms of checking all the functions in this module
 
 function collapseArrayValuesIntoString(array, collapseCharacter) {
 	//This loop strings together the names stored in the arrayIn into a 
@@ -801,24 +802,31 @@ function registerToReferenceFrame(referenceFrame, zFramesWindow){
 
 }
 
-function getSliceStatistics(imageName) {
+function getSliceStatistics(imageName, value) {
+
+	if(value != "mean" || value != "max") {
+		exit("getSliceStatistics() function input for value was not correctly formatted");
+	}
 
 	selectWindow(imageName);
 
-	outputArray = newArray(nSlices * 2);
+	outputArray = newArray(nSlices);
+	//Loop through getting the mean and max of each slice of imageName
+	for(currSlice = 1; currSlice < (nSlices+1); currSlice++) {
 
-	for(currMetric = 0; currMetric < 2; currMetric++) {
-		for(currSlice = 1; currSlice < (nSlices+1); currSlice++) {
-			setSlice(currSlice);
-			getRawStatistics(nPixels, mean, min, max, std, hist);
-			if(currMetric == 0) {
-				outputArray[currSlice-1] = mean;
-			} else if (currMetric == 1) {
-				outputArray[(currSlice-1) + nSlices] = max;
-			}
+		//Set the slice, get raw statistics
+		setSlice(currSlice);
+		getRawStatistics(nPixels, mean, min, max, std, hist);
+
+		//Store our mean or max depending on what loop we're on
+		if(value == "mean") {
+			outputArray[currSlice-1] = mean;
+		} else if (value == "max") {
+			outputArray[currSlice-1] = max;
 		}
 	}
 
+	//Return our values
 	return outputArray;
 
 }
@@ -868,8 +876,7 @@ function diffDetector(referenceFrame, subName) {
 	
 	//Measure the difference (mean grey value) for each slice - ideally all this code should be put into a function since it
 	//is a repeat of the laplacian frame selection from earlier
-	diffArrayAll = getSliceStatistics("Result of " + subName);
-	meanArray = Array.slice(diffArrayAll, 0, (diffArrayAll.length/2));
+	meanArray = getSliceStatistics("Result of " + subName, "mean");
 
 	selectWindow("Result of " + subName);
 	run("Close");
@@ -1025,22 +1032,13 @@ function autoCreateCleanedFrame(framesPerPlane, zPlane, renameAs, blurDetectorFr
 	
 }
 
-function getTimepointStack(imagePath, currentTimepoint, renameAs) {
-	
-	selectWindow(File.getName(imagePath));
-	
-	//Get out the current timepoint, split it into a stack for each frame (i.e. 14 stacks of 26 slices)
-	run("Duplicate...", "duplicate frames="+(currentTimepoint)+"");	
-	selectWindow(substring(File.getName(imagePath), 0, indexOf(File.getName(imagePath), ".tif")) + "-1.tif");	
-	rename(renameAs);
-
-}
-
 
 function createCleanedTimepoint(renameAs, imagePath, currentTimepoint, iniValues, blurDetectorFrames, diffDetectorFrames, manuallyChosenFrames) {
 
 	//Get out the current timepoint, split it into a stack for each frame (i.e. 14 stacks of 26 slices)
-	getTimepointStack(imagePath, currentTimepoint, renameAs);
+	selectWindow(File.getName(imagePath));
+	run("Duplicate...", "duplicate");
+	rename("Timepoint");
 
 	numberOfZPlanes = iniValues[3];
 	framesPerPlane = iniValues[4];
@@ -1197,20 +1195,6 @@ function saveAndMoveOutputImage(imagePath, directories) {
 
 }
 
-function getTableColumn(fileLoc, colName) {
-
-	open(fileLoc);
-	tableName = Table.title;
-	selectWindow(tableName);
-
-	outputArray = Table.getColumn(colName);
-
-	selectWindow(tableName);
-	run("Close");
-
-	return outputArray;
-
-}
 
 function createProcessedImageStacks(imagesToProcessArray, directories, iniValues, preProcStringToFind, blurDetectorFrames, diffDetectorFrames, autoProcessed, manualProcessed, imageName, autoPassedQA, manualPassedQA) {
 
@@ -1228,7 +1212,7 @@ function createProcessedImageStacks(imagesToProcessArray, directories, iniValues
 			
 			print("Creating cleaned stack for ", imagesToProcessArray[currImage]);
 			imagePath = directories[0] + imagesToProcessArray[currImage];
-			timepoints =  openAndGetImageTimepoints(imagePath, iniValues, preProcStringToFind);
+			timepoints =  1;
 			
 			stackContrastAdjust(imagesToProcessArray[currImage]);
 			
@@ -1397,7 +1381,7 @@ manualFrameSelectionWrapper(directories, manualFlaggedImages, iniValues, diffDet
 
 //Get the list of images we're going to process - if we've selected to process manual images, these
 //are what we process, else we do non-manually flagged images
-imagesToProcessArray = imagesToProcess(manualFlaggedImages, directories);
+imagesToProcessArray = imagesToAutomaticallyProcess(manualFlaggedImages, directories);
 
 createProcessedImageStacks(imagesToProcessArray, directories, iniValues, preProcStringToFind, blurDetectorFrames, diffDetectorFrames, autoProcessed, manualProcessed, imageName, autoPassedQA, manualPassedQA);
 

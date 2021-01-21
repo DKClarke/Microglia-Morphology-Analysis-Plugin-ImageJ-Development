@@ -1,37 +1,5 @@
-function getNumberOfImagesToDisplay() {
-
-	//Ask the user how many images to display on the screen at once for quality control and return this number
-	stringa="How many images do you want to display on the screen at once?";
-	Dialog.create("Experiment Information");
-		
-	Dialog.addNumber(stringa,1);
-	Dialog.show();
-	onScreen = Dialog.getNumber();
-
-	if(onScreen == 0) {
-		exit("Images to display can't be zero");
-	}
-
-	return(onScreen);
-
-}
-
-function getTableColumn(fileLoc, colName) {
-
-	open(fileLoc);
-	tableName = Table.title;
-	selectWindow(tableName);
-
-	outputArray = Table.getColumn(colName);
-
-	selectWindow(tableName);
-	run("Close");
-
-	return outputArray;
-
-}
-
 function getWorkingAndStorageDirectories(){
+	//Asks the user to point us to their working and image storage directories
 
     Dialog.create("Pick Directory");
     Dialog.addMessage("Choose morphology analysis working directory");
@@ -45,7 +13,11 @@ function getWorkingAndStorageDirectories(){
     Dialog.show();
     //Get the parent 2P directory i.e. where all the raw 2P images are stored
     imageStorage = getDirectory("Choose the image storage directory");
-    setOption("JFileChooser", false);
+	setOption("JFileChooser", false);
+	
+	if(workingDirectory == imageStorage) {
+		exit("Selected the same directory for 'Working' and 'Image Storage'");
+	}
 
     //Here we create an array to store the full name of the directories we'll be 
     //working with within our morphology processing directory
@@ -58,11 +30,6 @@ function getWorkingAndStorageDirectories(){
     directoriesNames = newArray('Input', 'Output', 'Done', 'Image Storage');
     for (i = 0; i < directories.length; i++) {
 		print('Directories', directoriesNames[i], ':',  directories[i]);
-    }
-
-    images_in_storage = listFilesAndFilesSubDirectories(directories[3], '.tif');
-    if(images_in_storage.length == 0) {
-    	exit('No .tif images in image storage, exiting plugin');
     }
 
     return directories;
@@ -113,9 +80,59 @@ function listFilesAndFilesSubDirectories(directoryName, subString) {
 	
 }
 
+function getTableColumn(fileLoc, colName) {
+	//Open the table at fileLoc, retrieve the colName column, if it doesn't exist,
+	//return an array the size of the table filled with -1
+
+	print("Retrieving the column ", colName, " from the table ", File.getName(fileLoc));
+
+	if(File.exists(fileLoc) != 1) {
+		exit("Table " + fileLoc + "doesn't exist");
+	}
+
+	open(fileLoc);
+	tableName = Table.title;
+	selectWindow(tableName);
+
+	//If our column exists
+	columns = Table.headings;
+	if(indexOf(columns, colName) > -1) {
+		outputArray = Table.getColumn(colName);
+	
+	//Else
+	} else {
+		outputArray = newArray(Table.size);
+		Array.fill(outputArray, -1);
+	}
+
+	selectWindow(tableName);
+	run("Close");
+
+	return outputArray;
+
+}
+
+function getNumberOfImagesToDisplay() {
+
+	//Ask the user how many images to display on the screen at once for quality control and return this number
+	stringa="How many images do you want to display on the screen at once?";
+	Dialog.create("Experiment Information");
+		
+	Dialog.addNumber(stringa,1);
+	Dialog.show();
+	onScreen = Dialog.getNumber();
+
+	if(onScreen <= 0) {
+		exit("Images to display can't be <= 0");
+	}
+
+	return(onScreen);
+
+}
+
 function findMatchInArray(valueToFind, checkInArray) {
 
-	//Check in the other arrays
+	//Find the index of valueToFind in checkInArray, else return -1
 	for(checkAgainst = 0; checkAgainst < checkInArray.length; checkAgainst ++) {
 		if(valueToFind == checkInArray[checkAgainst]) {
 			return checkAgainst;
@@ -126,9 +143,10 @@ function findMatchInArray(valueToFind, checkInArray) {
 
 }
 
+//Function checks if the image is eligible to be QA'd
 function qaEligible(autoProcessed, autoPassedQA, manualProcessed, manualPassedQA) {
 
-	//If the image hasn't been auto processed (which is impossible if it is in the processedStacks away but for clarity)
+	//If the image hasn't been auto processed (which is impossible if it is in the processedStacks array but for clarity)
 	//We don't QA it
 	if(autoProcessed != 1) {
 		checkIt = false;
@@ -228,7 +246,6 @@ manualPassedQA = getTableColumn(tableLoc, "Manual QA Passed");
 //Here we set the macro into batch mode and run the housekeeping function which 
 //clears the roimanager, closes all open windows, and clears the results table
 setBatchMode(true);
-Housekeeping();
 
 //Count how many images we've opened (so we know when we hit enough to display to the user)
 opened = 0;
@@ -296,7 +313,7 @@ for(currImage = 0; currImage < imageName.length; currImage++) {
 				//If we've manual processed this image, and not QA'd this, and we're not keeping it
 				if(manualProcessed[indexOfImage] == 1 && kept == 'false' && manualPassedQA[indexOfImage] == -1) {
 					manualPassedQA[indexOfImage] = 0;
-					print('Image failed manual QA; ignoring from now on');
+					print('Image failed manual QA; ignoring from all subsequent pipeline steps');
 
 				//Otherwise if we've manual processed this image, and not QA'd this, and we're keeping it
 				} else if(manualProcessed[indexOfImage] == 1 && kept != 'false' && manualPassedQA[indexOfImage] == -1) {
@@ -311,10 +328,15 @@ for(currImage = 0; currImage < imageName.length; currImage++) {
 					doneFileLoc = directories[2] + imageName[indexOfImage];
 
 					//We move this image back to the input folder from the done folder so we can manually process it
+					print("Moving image from the Done to the Input folder");
 					wasMoved = File.rename(doneFileLoc, directories[0] + imageName[indexOfImage]);
 					if(wasMoved == 0) {
-						exit("Issue with moving image to input folder");
-						//Could be because its already in input?
+						//If the image doesn't already exist in the input folder, this is weird
+						if(File.exists(directories[0] + imageName[indexOfImage]) != 1) {
+							exit("Issue with moving image to Input folder");
+						} else {
+							print("Image already present in the Input folder");
+						}
 					} else {
 						print("Image moved from Done to Input");
 					}

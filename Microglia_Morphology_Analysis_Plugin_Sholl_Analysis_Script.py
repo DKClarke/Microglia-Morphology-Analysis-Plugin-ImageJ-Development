@@ -31,7 +31,7 @@ def checkCorrectMethodFlag(normProfileMethodFlag, assumedValue):
         return
 
 # Populate a dictionary of our mask metrics
-def populateMaskMetrics(maskName, tcsVal, lStats, nStatsSemiLog, nStatsLogLog):
+def populateMaskMetrics(maskName, tcsVal, lStats, nStatsSemiLog, nStatsLogLog, cal):
 
     # Store all our metrics in a dictionary
     maskMetrics = {'Mask Name': maskName,
@@ -177,7 +177,7 @@ def main(imp, startRad, stepSize, saveLoc, maskName, cellName, tcsVal):
     cal = Calibration(imp)
 
     # Get our mask metrics
-    maskMetrics = populateMaskMetrics(maskName, tcsVal, lStats, nStatsSemiLog, nStatsLogLog)
+    maskMetrics = populateMaskMetrics(maskName, tcsVal, lStats, nStatsSemiLog, nStatsLogLog, cal)
 
     # Get metrics based on the 10th-90th precentile of our semi log and log log data
     maskPercMetrics = populatePercentageMaskMetrics(nStatsSemiLog, nStatsLogLog)

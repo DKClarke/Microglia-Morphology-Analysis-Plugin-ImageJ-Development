@@ -54,7 +54,7 @@ function listFilesAndFilesSubDirectories(directoryName, subString) {
 		
 		//If the file we're checking is a file and not a directory and if it  contains the substring we're 
 		//interested in within its full path we check  against the absolute path of our file in lower case on both counts
-		if (File.isDirectory(fullPath)==0 && indexOf(toLowerCase(fullPath), toLowerCase(subString))>-1) {
+		if (File.isDirectory(fullPath)==0 && indexOf(toLowerCase(listOfFiles[i]), toLowerCase(subString))>-1) {
 			
 			//We store the full path in the output fileLocations at the latest index 
 			//(end of the array) and add an extra bit onto the Array so we can keep filling it
@@ -572,8 +572,9 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 				//Set the path to where we copy our analysed cells to so we can run a fractal analysis on this folder in 
 				//batch at a later timepoint - if this directory doesn't exist, make it
-				fracLacPath = directories[1]+"fracLac/"+ "TCS"+tcsValue[TCSLoops]+"/";
-				makeDirectories(newArray(fracLacPath));
+				fracLacPath = directories[1]+"fracLac/";
+				fracLacTCSPath = fracLacPath + "TCS"+tcsValue[TCSLoops] + "/";
+				makeDirectories(newArray(fracLacPath, fracLacTCSPath));
 
 				//If we haven't finished analysing this TCS value
 				if(tcsAnalysed[TCSLoops] == -1) {
@@ -624,7 +625,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 							"# Slab voxels", "Average Branch Length", "# Triple points", "# Quadruple points", 
 							"Maximum Branch Length", "Longest Shortest Path", "SkelArea");
 
-							cellFracLacPath = fracLacPath + maskName[currCell];
+							cellFracLacPath = fracLacTCSPath + maskName[currCell];
 								
 							//If we haven't already copied the cell to the fracLac folder, do so
 							if(File.exists(cellFracLacPath) == 0) {
@@ -688,7 +689,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 							run("Select None");
 							makePoint(somaCM[0], somaCM[1]);
 
-							pyFileLocation = getDir("plugins") + 'Microglia_Morphology_Analysis_Plugin_Sholl_Analysis_Script.py';
+							pyFileLocation = getDir("plugins") + 'Scripts/Microglia_Morphology_Analysis_Plugin_Sholl_Analysis_Script.py';
 							if(File.exists(pyFileLocation) != 1) {
 								exit("Microglia_Morphology_Analysis_Plugin_Sholl_Analysis_Script.py not found in the plugins folder at \n" + getDir("plugins"));
 							}

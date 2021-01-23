@@ -54,7 +54,7 @@ function listFilesAndFilesSubDirectories(directoryName, subString) {
 		
 		//If the file we're checking is a file and not a directory and if it  contains the substring we're 
 		//interested in within its full path we check  against the absolute path of our file in lower case on both counts
-		if (File.isDirectory(fullPath)==0 && indexOf(toLowerCase(fullPath), toLowerCase(subString))>-1) {
+		if (File.isDirectory(fullPath)==0 && indexOf(toLowerCase(listOfFiles[i]), toLowerCase(subString))>-1) {
 			
 			//We store the full path in the output fileLocations at the latest index 
 			//(end of the array) and add an extra bit onto the Array so we can keep filling it
@@ -442,21 +442,35 @@ function selectFramesManually(noFramesToSelect, imageName) {
 	run("Tile");
 
     //Looping through the number of frames the user selected to keep, ask the user to
-	//scroll to a frame to retain, if that frame is retained, at the index in
-	//framesToKeepArray that matches the index of the slice in this image, we replace
-	//0 with the frame number
+	//scroll to a frame to retain, if that frame is retained, store the slice index in
+	//sliceSelectionArray
+	sliceSelectionArray = newArray(noFramesToSelect);
+	
+	//Create an array where each value is a slice number in the stack
+	slicesInStack = getArrayOneToMaxValue(subSlices);
     for(currFrame=0; currFrame < noFramesToSelect; currFrame++) {
             
 		selectWindow(imageName);
 		setBatchMode("show");
         waitForUser("Scroll onto the frame to retain and click 'OK'");
         keptSlice = getSliceNumber();
-        print("Slice selected: ", keptSlice);
-        print("If selecting more, select a different one");
+		print("Slice selected: ", keptSlice);
+		run("Delete Slice");
 
-        framesToKeepArray[(keptSlice-1)] = keptSlice;
-            
-    }
+		//Store the slice numbers of the stacks that we're selecting and then deleting
+		sliceSelectionArray[currFrame] = keptSlice-1;
+
+		//Find what actual slice number this corresponds to
+		actualSliceChosen = slicesInStack[keptSlice-1];
+		print('Corresponding slice chosen', actualSliceChosen);
+
+		//Delete this slice from the slicesInStack array just like we did
+		//the stack
+		slicesInStack = Array.deleteValue(slicesInStack, actualSliceChosen);
+
+		//Store the actual slice chosen as its index in framesToKeepArray
+		framesToKeepArray[(actualSliceChosen-1)] = actualSliceChosen;
+	}
 
 	setOption("AutoContrast", false);
 
@@ -555,7 +569,9 @@ function manualFrameSelection(directories, manualFlaggedImages, iniValues, frame
 
         if(proceed == true) {
 
-            print("Manually selecting frames for", File.getNameWithoutExtension(toOpen));
+			print("Manually selecting frames for", File.getNameWithoutExtension(toOpen));
+			
+			open(toOpen);
 
 			//Format the image for manual selection
 			formatManualSelectionImage(toOpen);
@@ -606,7 +622,8 @@ function imagesToAutomaticallyProcess(manualFlaggedImages, directories) {
 			for(currManualCheck = 0; currManualCheck < manualFlaggedImages.length; currManualCheck++){
 
 				//If they're in our manual flagged images array, exclude them
-				if(File.getName(imagesInput[currImage]) == manualFlaggedImages[currManualCheck]){
+				slicesToUseFile = directories[1] + File.getNameWithoutExtension(manualFlaggedImages[currManualCheck]) + "/Slices To Use.csv";
+				if(File.getName(imagesInput[currImage]) == manualFlaggedImages[currManualCheck] && File.exists(slicesToUseFile) != 1) {
 					imagesInput[currImage] = 0;
 					break;
 				}
@@ -655,14 +672,33 @@ function expandCanvas(imageName) {
 }
 
 //This function removes any elements from an input array that conatins the string 'string' and returns it
-function removeStringFromArray(fileLocations, string) {
+function filterArray(fileLocations, string, keepFlag) {
 
+	//For each element in the array
 	for (i = 0; i < fileLocations.length; i++) {
-		if(indexOf(fileLocations[i], string) > -1) {
-			fileLocations[i] = 0;
+
+		//Find whether the string exists in the current element
+		stringInIndex = indexOf(fileLocations[i], string);
+
+		//If we're using the function to keep elements that have this string
+		if(keepFlag == true) {
+
+			//Flag elements that don't have the string with 0's
+			if(stringInIndex < 0) {
+				fileLocations[i] = 0;
+			}
+
+		//If we're using the function to remove elements that have this string
+		} else {
+
+			//Set elements that have the string to 0
+			if(stringInIndex > -1) {
+				fileLocations[i] = 0;
+			}
 		}
 	}
 
+	//Return an array where these elements are removed
 	toReturn = Array.deleteValue(fileLocations, 0);
 
 	return toReturn;
@@ -805,7 +841,7 @@ function registerToReferenceFrame(referenceFrame, zFramesWindow){
 //grey value
 function getSliceStatistics(imageName, value) {
 
-	if(value != "mean" || value != "max") {
+	if(value != "mean" && value != "max") {
 		exit("getSliceStatistics() function input for value was not correctly formatted");
 	}
 
@@ -1238,69 +1274,63 @@ function saveAndMoveOutputImage(imagePath, directories) {
 function createProcessedImageStacks(imagesToProcessArray, directories, iniValues, preProcStringToFind, blurDetectorFrames, diffDetectorFrames, autoProcessed, manualProcessed, imageName, autoPassedQA, manualPassedQA) {
 
 	//If we have images to process
-	if(imagesToProcessArray[0] != 0) {
+	if(imagesToProcessArray.length > 0) {
+		if(imagesToProcessArray[0] != 0) {
 
-		//For each image
-		for(currImage = 0; currImage<imagesToProcessArray.length; currImage++) {
+			//For each image
+			for(currImage = 0; currImage<imagesToProcessArray.length; currImage++) {
 
-			//Find the index of our current image to process in our imageName array
-			imageNameIndex = 0;
-			for(currIndex = 0; currIndex < imageName.length; currIndex++) {
-				if(imageName[currIndex] == imagesToProcessArray[currImage]) {
-					imageNameIndex = currIndex;
-					break;
+				//Find the index of our current image to process in our imageName array
+				imageNameIndex = findMatchInArray(imagesToProcessArray[currImage], imageName);
+
+				if(imageNameIndex == -1) {
+					exit("Issue here at line 1258");
 				}
+				
+				print("Creating cleaned stack for ", imagesToProcessArray[currImage]);
+				imagePath = directories[0] + imagesToProcessArray[currImage];
+				open(imagePath);
+				
+				//Adjust the contrast in the stack
+				stackContrastAdjust(imagesToProcessArray[currImage]);
+				
+				//Expand its canvas
+				expandCanvas(imagesToProcessArray[currImage]);
+		
+				//Get our manually chosen frames if they exist
+				slicesToUseFile = directories[1] + File.getNameWithoutExtension(imagesToProcessArray[currImage]) + "/Slices To Use.csv";
+				manuallyChosenFrames = newArray('false');
+				if(File.exists(slicesToUseFile) == 1) {
+					print("Using manually chosen frames to create processed stack for", imagesToProcessArray[currImage]);
+					manuallyChosenFrames = getTableColumn(slicesToUseFile, "Slices");
+				} else {
+					print("Automatically choosing frames to create processed stack for", imagesToProcessArray[currImage]);
+				}	
+				
+				//Create a cleaned stack using these frames, or manually chosen frames
+				createCleanedStack(imagePath, iniValues, blurDetectorFrames, diffDetectorFrames, manuallyChosenFrames);
+				
+				//Save the output and move it to the done folder
+				saveAndMoveOutputImage(imagePath, directories);
+		
+				print("Image processing for ", imagesToProcessArray[currImage], " complete");
+
+				//Set our processing values to 1 
+				if(File.exists(slicesToUseFile) == 1) {
+					manualProcessed[imageNameIndex] = 1;
+				} else {
+					autoProcessed[imageNameIndex] = 1;
+				}
+
+				//Save these arrays into a table
+				saveImagesToUseTable(imageName, autoProcessed, autoPassedQA, manualProcessed, manualPassedQA, directories);
+				
 			}
-
-			imageNameIndex = findMatchInArray(imagesToProcessArray[currImage], imageName);
-
-			if(imageNameIndex == -1) {
-				exit("Issue here at line 1258");
-			}
-			
-			print("Creating cleaned stack for ", imagesToProcessArray[currImage]);
-			imagePath = directories[0] + imagesToProcessArray[currImage];
-			
-			//Adjust the contrast in the stack
-			stackContrastAdjust(imagesToProcessArray[currImage]);
-			
-			//Expand its canvas
-			expandCanvas(imagesToProcessArray[currImage]);
-	
-			//Get our manually chosen frames if they exist
-			slicesToUseFile = directories[1] + File.getNameWithoutExtension(imagesToProcessArray[currImage]) + "/Slices To Use.csv";
-			manuallyChosenFrames = newArray('false');
-			if(File.exists(slicesToUseFile) == 1) {
-				print("Using manually chosen frames to create processed stack for", imagesToProcessArray[currImage]);
-				manuallyChosenFrames = getTableColumn(slicesToUseFile, "Slices");
-			} else {
-				print("Automatically choosing frames to create processed stack for", imagesToProcessArray[currImage]);
-			}	
-			
-			//Create a cleaned stack using these frames, or manually chosen frames
-			createCleanedStack(imagePath, iniValues, blurDetectorFrames, diffDetectorFrames, manuallyChosenFrames);
-			
-			//Save the output and move it to the done folder
-			saveAndMoveOutputImage(imagePath, directories);
-	
-			print("Image processing for ", imagesToProcessArray[currImage], " complete");
-
-			//Set our processing values to 1 
-			if(File.exists(slicesToUseFile) == 1) {
-				manualProcessed[imageNameIndex] = 1;
-			} else {
-				autoProcessed[imageNameIndex] = 1;
-			}
-
-			//Save these arrays into a table
-			saveImagesToUseTable(imageName, autoProcessed, autoPassedQA, manualProcessed, manualPassedQA, directories);
-			
+		
+		} else {
+			print("No images to process");
 		}
-	
-	} else {
-		print("No images to process");
 	}
-
 }
 
 function findMatchInArray(valueToFind, checkInArray) {
@@ -1356,7 +1386,7 @@ preProcStringToFind = inputs_array[3];
 fileLocationsRaw = listFilesAndFilesSubDirectories(directories[3], preProcStringToFind);
 
 //Remove ini files
-fileLocations = removeStringFromArray(fileLocationsRaw, '.ini');
+fileLocations = filterArray(fileLocationsRaw, '.ini', false);
 
 //For each image in our image storage location, copy it into our input directory if it isn't already
 //in there (and isn't in the done folder either) and append the saved images with the preProcStringToFind
@@ -1364,7 +1394,10 @@ moveImageToInput(fileLocations, directories, preProcStringToFind);
 
 //Now we get out the list of files in our input folder 
 //once we've gone through all the microglia morphology images in our image storage directory
-imagesInput = getFileList(directories[0]);
+imagesInputRaw = getFileList(directories[0]);
+
+//Only retain files in the input folder that contain the .tif string
+imagesInput = filterArray(imagesInputRaw, '.tif', true);
 
 //Point to the table where we store the status of our images in the processing pipeline
 imagesToUseFile = directories[1] +  "Images to Use.csv";
@@ -1385,10 +1418,10 @@ if(File.exists(imagesToUseFile) == 1) {
 		foundIndex = findMatchInArray(imagesInput[index], imageName);
 		if(foundIndex == -1) {
 			imageName = Array.concat(imageName, newArray(imagesInput[index]));
-			autoProcessed = Array.concat(autoProcessed, newArray(0));
-			autoPassedQA = Array.concat(autoPassedQA, newArray(-1));
-			manualProcessed = Array.concat(manualProcessed, newArray(0));
-			manualPassedQA = Array.concat(manualPassedQA, newArray(-1));
+			autoProcessed = Array.concat(autoProcessed, Array.fill(newArray(1), 0));
+			autoPassedQA = Array.concat(autoPassedQA, Array.fill(newArray(1), -1));
+			manualProcessed = Array.concat(manualProcessed, Array.fill(newArray(1), 0));
+			manualPassedQA = Array.concat(manualPassedQA, Array.fill(newArray(1), -1));
 
 		}
 	}
@@ -1431,12 +1464,14 @@ for (i = 0; i < iniTextStringsPre.length; i++) {
 
 //For our images that are flagged for manual frame selection, ask the user to identify which frames
 //to keep, then for each image, save this in a table in that images directory
-manualFrameSelectionWrapper(directories, manualFlaggedImages, iniValues, diffDetectorFrames, preProcStringToFind, manCorrect);
+manualFrameSelectionWrapper(directories, manualFlaggedImages, iniValues, diffDetectorFrames, manCorrect);
 
 //Get the list of images we're going to process - if we've selected to process manual images, these
 //are what we process, else we do non-manually flagged images
 imagesToProcessArray = imagesToAutomaticallyProcess(manualFlaggedImages, directories);
 
-createProcessedImageStacks(imagesToProcessArray, directories, iniValues, preProcStringToFind, blurDetectorFrames, diffDetectorFrames, autoProcessed, manualProcessed, imageName, autoPassedQA, manualPassedQA);
+imagesToProcessArrayClean = filterArray(imagesToProcessArray, '.tif', true);
+
+createProcessedImageStacks(imagesToProcessArrayClean, directories, iniValues, preProcStringToFind, blurDetectorFrames, diffDetectorFrames, autoProcessed, manualProcessed, imageName, autoPassedQA, manualPassedQA);
 
 print("Image processing complete");

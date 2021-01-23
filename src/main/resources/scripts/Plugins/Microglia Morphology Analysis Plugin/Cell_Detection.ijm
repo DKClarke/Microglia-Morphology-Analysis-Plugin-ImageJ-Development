@@ -54,7 +54,7 @@ function listFilesAndFilesSubDirectories(directoryName, subString) {
 		
 		//If the file we're checking is a file and not a directory and if it  contains the substring we're 
 		//interested in within its full path we check  against the absolute path of our file in lower case on both counts
-		if (File.isDirectory(fullPath)==0 && indexOf(toLowerCase(fullPath), toLowerCase(subString))>-1) {
+		if (File.isDirectory(fullPath)==0 && indexOf(toLowerCase(listOfFiles[i]), toLowerCase(subString))>-1) {
 			
 			//We store the full path in the output fileLocations at the latest index 
 			//(end of the array) and add an extra bit onto the Array so we can keep filling it

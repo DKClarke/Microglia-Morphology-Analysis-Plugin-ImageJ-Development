@@ -54,7 +54,7 @@ function listFilesAndFilesSubDirectories(directoryName, subString) {
 		
 		//If the file we're checking is a file and not a directory and if it  contains the substring we're 
 		//interested in within its full path we check  against the absolute path of our file in lower case on both counts
-		if (File.isDirectory(fullPath)==0 && indexOf(toLowerCase(fullPath), toLowerCase(subString))>-1) {
+		if (File.isDirectory(fullPath)==0 && indexOf(toLowerCase(listOfFiles[i]), toLowerCase(subString))>-1) {
 			
 			//We store the full path in the output fileLocations at the latest index 
 			//(end of the array) and add an extra bit onto the Array so we can keep filling it
@@ -291,7 +291,7 @@ function getMaskGenerationInputs() {
 
 	Dialog.create("Info for each section");
 
-	defaultValues = newArray(200, 800, 100, 100, 120)
+	defaultValues = newArray(200, 800, 100, 100, 120);
 
 	//Here we loop through the strings and add a box for numeric input for each
 	for(i=0; i<strings.length; i++) {
@@ -578,7 +578,7 @@ function tooCloseToEdge(imageName, bufferSize) {
 	bottommostXArray = getArrayOfMatchingValues(yCoords, yMax, xCoords);
 	bottommostX = getRoundedMeanOfArray(bottommostXArray);
 
-	xPoints = newarray(xMax, xMin, bottommostX, topmostX);
+	xPoints = newArray(xMax, xMin, bottommostX, topmostX);
 	yPoints = newArray(rightmostY, leftmostY, yMax, yMin);
 	//[0] and [1] are highest x with y (rightmost), [2] and [3] are lowest x with y (leftmost), 
 	//[4] and [5] are x and highest y (bottommost) [6] and [7] are x with lowest y (topmost)
@@ -586,7 +586,7 @@ function tooCloseToEdge(imageName, bufferSize) {
 	//For our 4 extrema, find out if they're within the buffer of our image
 	inBufferResults = newArray(xPoints.length);
 	for(currPoint = 0; currPoint < 4; currPoint++) {
-		inBufferResults[currPoint] = coordinatesWithinBuffer(imageName, xPoints[currPoint], yPoints[currPoint], bufferSize)
+		inBufferResults[currPoint] = coordinatesWithinBuffer(imageName, xPoints[currPoint], yPoints[currPoint], bufferSize);
 	}
 
 	//If the mean of our results is 1 then all our results were true and we return false since we're not
@@ -781,7 +781,7 @@ function makeOrRetrieveLR(lrSaveLoc, LRCoords, LRLengthPixels, avgProjImageLoc) 
 		createLRImage(avgProjImageLoc, LRCoords, newArray(LRLengthPixels, LRLengthPixels));
 
 		//Now that we're certain we've got the optimal coordinates, we save our LR image
-		saveImage("LR", lrSaveLoc)
+		saveImage("LR", lrSaveLoc);
 
 	}
 
@@ -1019,7 +1019,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 		tcsQCChecked = getOrCreateTableColumn(tcsStatusTable, "QC Checked", -1, numberOfLoops);
 		tcsAnalysed = getOrCreateTableColumn(tcsStatusTable, "Analysed", -1, numberOfLoops);
 
-		tcsValue = populateTCSValueArray(tcsValue, numberOfLoops, selection)
+		tcsValue = populateTCSValueArray(tcsValue, numberOfLoops, selection);
 
 		//Loop through each TCS value the user has specified
 		for(TCSLoops=0; TCSLoops<tcsValue.length; TCSLoops++) {

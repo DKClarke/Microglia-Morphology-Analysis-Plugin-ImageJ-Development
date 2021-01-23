@@ -9,6 +9,7 @@ API for LinearProfileStats = https://javadoc.scijava.org/Fiji/sc/fiji/snt/analys
 for Normalised stats = https://javadoc.scijava.org/Fiji/index.html?sc/fiji/snt/package-summary.html
 '''
 
+# Import all the libraries we need to do our sholl analysis
 from ij import IJ
 from ij.measure import Calibration
 from sc.fiji.snt import Tree
@@ -21,79 +22,16 @@ from sc.fiji.snt.analysis.sholl.parsers import (ImageParser2D, ImageParser3D)
 import os
 import csv
 
-def main(imp, startRad, stepSize, saveLoc, maskName, cellName, tcsVal):
-
-    # We may want to set specific options depending on whether we are parsing a
-    # 2D or a 3D image. If the image has multiple channels/time points, we set
-    # the C,T position to be analyzed by activating them. The channel and frame
-    # will be stored in the profile properties map and can be retrieved later):
-    parser = ImageParser2D(imp)
-    parser.setRadiiSpan(0, ImageParser2D.MEAN) # mean of 4 measurements at every radius
-    parser.setPosition(1, 1, 1) # channel, frame, Z-slice
-
-    # Center: the x,y,z coordinates of center of analysis. In a real-case usage
-    # these would be retrieved from ROIs or a centroid of a segmentation routine.
-    # If no ROI exists coordinates can be set in spatially calibrated units
-    # (floats) or pixel coordinates (integers):
-    parser.setCenterFromROI()
-
-    # Sampling distances: start radius (sr), end radius (er), and step size (ss).
-    # A step size of zero would mean 'continuos sampling'. Note that end radius
-    # could also be set programmatically, e.g., from a ROI
-    parser.setRadii(startRad, stepSize, parser.maxPossibleRadius()) # (sr, er, ss)
-
-    # We could now set further options as we would do in the dialog prompt:
-    parser.setHemiShells('none')
-    # (...)
-
-    # Parse the image. This may take a while depending on image size. 3D images
-    # will be parsed using the number of threads specified in ImageJ's settings:
-    parser.parse()
-    if not parser.successful():
-        log.error(imp.getTitle() + " could not be parsed!!!")
+# Define a function where we print if there's a difference between teh numeric value we're using to extract
+# semi-log or log-log values, and the numeric value actually returned by the API
+def checkCorrectMethodFlag(normProfileMethodFlag, assumedValue):
+    if normProfileMethodFlag != assumedValue:
+        print(str(normProfileMethodFlag))
+        print('Problem with method flag')
         return
 
-    # We can e.g., access the 'Sholl mask', a synthetic image in which foreground
-    # pixels have been assigned the no. of intersections:
-    maskImage = parser.getMask()
-    maskLoc = saveLoc + "Sholl Mask " + cellName + ".tif"
-    IJ.save(maskImage, maskLoc)
-
-    # Now we can access the Sholl profile:
-    profile = parser.getProfile()
-    if profile.isEmpty():
-        log.error("All intersection counts were zero! Invalid threshold range!?")
-        return
-
-    # Remove zeros here as otherwise this messes with polynomial fitting functions
-    profile.trimZeroCounts()
-
-    # Calculate the best fit polynomial
-    lStats = LinearProfileStats(profile)
-
-    #plot = ShollPlot(lStats)
-    #plot.show()
-
-    # Fit out polynomial
-    #plot.rebuild()
-
-    # Calculate stats from our area normalised semi-log and log-log profiles (128 is semi-log and 256 is log-log)
-    nStatsSemiLog = NormalizedProfileStats(profile, ShollStats.AREA, 128)
-    nStatsLogLog = NormalizedProfileStats(profile, ShollStats.AREA, 256)
-
-    if NormalizedProfileStats(profile, ShollStats.AREA).getMethodFlag('Semi-log') != 128:
-        print(str(NormalizedProfileStats(profile, ShollStats.AREA).getMethodFlag('Semi-log')))
-        print('Problem with method flag for Semi-log')
-        return
-
-    if NormalizedProfileStats(profile, ShollStats.AREA).getMethodFlag('Log-log') != 256:
-        print(str(NormalizedProfileStats(profile, ShollStats.AREA).getMethodFlag('Log-log')))
-        print('Problem with method flag for Log-log')
-        return
-
-
-    # Get our image calibration and use it to extract the critical values and radii
-    cal = Calibration(imp)
+# Populate a dictionary of our mask metrics
+def populateMaskMetrics(maskName, tcsVal, lStats, nStatsSemiLog, nStatsLogLog):
 
     # Store all our metrics in a dictionary
     maskMetrics = {'Mask Name': maskName,
@@ -123,7 +61,9 @@ def main(imp, startRad, stepSize, saveLoc, maskName, cellName, tcsVal):
         'Regression Intercept (Log-log)': nStatsLogLog.getIntercept()
         }
 
+    return maskMetrics
 
+def populatePercentageMaskMetrics(nStatsSemiLog, nStatsLogLog):
     # Get our P10-90 metrics
     nStatsSemiLog.restrictRegToPercentile(10, 90)
     nStatsLogLog.restrictRegToPercentile(10, 90)
@@ -134,16 +74,9 @@ def main(imp, startRad, stepSize, saveLoc, maskName, cellName, tcsVal):
         'Regression Intercept (Log-log)[P10-P90]': nStatsLogLog.getIntercept()
         }
 
-    maskMetrics.update(maskPercMetrics)    
+    return maskPercMetrics
 
-    plotSL = ShollPlot(nStatsSemiLog).getImagePlus()
-    plotLL = ShollPlot(nStatsLogLog).getImagePlus()
-
-    plotSLLoc = saveLoc + "Sholl SL " + cellName + ".tif"
-    plotLLLoc = saveLoc + "Sholl LL " + cellName + ".tif"
-
-    IJ.save(plotSL, plotSLLoc)
-    IJ.save(plotLL, plotLLLoc)
+def saveMaskMetrics(saveLoc, cellName, maskMetrics):
 
     # Save our file
     writeResultsLoc = saveLoc + "Sholl " + cellName + ".csv"
@@ -152,10 +85,112 @@ def main(imp, startRad, stepSize, saveLoc, maskName, cellName, tcsVal):
         writer.writerow(list(maskMetrics.keys()))
         writer.writerow(list(maskMetrics.values()))
 
-    '''
-    Putting this bit about polynomial fitting down here as the following function sometimes throws an exception and this way
-    we at least have some data written and placeholders NaNs if it does
-    '''
+def saveShollPlots(nStatsObj, saveLoc):
+    plot = ShollPlot(nStatsObj).getImagePlus()
+    IJ.save(plot, saveLoc)
+
+
+def addPolyFitToMaskMetrics(lStats, cal, maskMetrics, bestDegree):
+
+    trial = lStats.getPolynomialMaxima(0.0, 100.0, 50.0)
+    critVals = list()
+    critRadii = list()
+    for curr in trial.toArray():
+        critVals.append(curr.rawY(cal))
+        critRadii.append(curr.rawX(cal))
+
+    maskMetrics['Kurtosis (fit)'] =  lStats.getKurtosis(True)
+    maskMetrics['Ramification Index (fit)'] = lStats.getRamificationIndex(True)
+    maskMetrics['Critical Value'] =  sum(critVals) / len(critVals)
+    maskMetrics['Critical Radius'] =  sum(critRadii) / len(critRadii)
+    maskMetrics['Mean Value'] =  lStats.getMean(True)
+    maskMetrics['Polynomial Degree'] =  bestDegree
+
+    return maskMetrics
+
+def main(imp, startRad, stepSize, saveLoc, maskName, cellName, tcsVal):
+
+    # Create a parser object based on our thresholded cell mask image
+    parser = ImageParser2D(imp)
+
+    # Set the span of our measurement radii to 0 - i.e. get a meaasurement at every pixel away
+    # from the centre of the cell
+    parser.setRadiiSpan(0, ImageParser2D.MEAN) 
+
+    # Set our position in the parser (just to be safe)
+    parser.setPosition(1, 1, 1) # channel, frame, Z-slice
+
+    # Center: the x,y,z coordinates of center of analysis
+    # Set this from a ROI currently placed on the image
+    parser.setCenterFromROI()
+
+    # Sampling distances: start radius (sr), end radius (er), and step size (ss).
+    # A step size of zero would mean 'continuos sampling'. Note that end radius
+    # could also be set programmatically, e.g., from a ROI
+    parser.setRadii(startRad, stepSize, parser.maxPossibleRadius()) # (sr, er, ss)
+
+    # Set our hemi shells to 'none' i.e. we're taking measurements from both hemispheres
+    # of our image
+    parser.setHemiShells('none')
+    # (...)
+
+    # Parse the image. This may take a while depending on image size
+    parser.parse()
+    if not parser.successful():
+        log.error(imp.getTitle() + " could not be parsed!!!")
+        return
+
+    # We can e.g., access the 'Sholl mask', a synthetic image in which foreground
+    # pixels have been assigned the no. of intersections
+    # Save this image
+    maskImage = parser.getMask()
+    maskLoc = saveLoc + "Sholl Mask " + cellName + ".tif"
+    IJ.save(maskImage, maskLoc)
+
+    # Now we can access the Sholl profile:
+    profile = parser.getProfile()
+    if profile.isEmpty():
+        log.error("All intersection counts were zero! Invalid threshold range!?")
+        return
+
+    # Remove zeros here as otherwise this messes with polynomial fitting functions
+    profile.trimZeroCounts()
+
+    # Calculate the best fit polynomial
+    lStats = LinearProfileStats(profile)
+
+    #plot = ShollPlot(lStats)
+    #plot.show()
+
+    # Fit out polynomial
+    #plot.rebuild()
+
+    # Calculate stats from our area normalised semi-log and log-log profiles (128 is semi-log and 256 is log-log)
+    nStatsSemiLog = NormalizedProfileStats(profile, ShollStats.AREA, 128)
+    nStatsLogLog = NormalizedProfileStats(profile, ShollStats.AREA, 256)
+
+    # Do some checks here to make sure we're specifying semi log and log log correctly
+    checkCorrectMethodFlag(NormalizedProfileStats(profile, ShollStats.AREA).getMethodFlag('Semi-log'), 128)
+    checkCorrectMethodFlag(NormalizedProfileStats(profile, ShollStats.AREA).getMethodFlag('Log-log'), 256)
+
+    # Get our image calibration and use it to extract the critical values and radii
+    cal = Calibration(imp)
+
+    # Get our mask metrics
+    maskMetrics = populateMaskMetrics(maskName, tcsVal, lStats, nStatsSemiLog, nStatsLogLog)
+
+    # Get metrics based on the 10th-90th precentile of our semi log and log log data
+    maskPercMetrics = populatePercentageMaskMetrics(nStatsSemiLog, nStatsLogLog)
+
+    # Update our maskMetrics dictionary with our percentage metrics
+    maskMetrics.update(maskPercMetrics)
+
+    # Save our mask metrics
+    saveMaskMetrics(saveLoc, cellName, maskMetrics)
+
+    # Save our sholl plots
+    saveShollPlots(nStatsSemiLog, saveLoc + "Sholl SL " + cellName + ".tif")
+    saveShollPlots(nStatsLogLog, saveLoc + "Sholl LL " + cellName + ".tif")
 
     # Get the best fitting polynomial degree between 1 and 30
     bestDegree = lStats.findBestFit(1, # lowest degree
@@ -163,37 +198,23 @@ def main(imp, startRad, stepSize, saveLoc, maskName, cellName, tcsVal):
                             0.7,   # lowest value for adjusted RSquared
                             0.05)   # the two-sample K-S p-value used to discard 'unsuitable fits'
 
-    if(bestDegree != -1):
+    # If we actually found a best fit:
+    if bestDegree != -1:
+
+        # Fit our polynomial, save a plot of our best fit, update our mask metrics with fit metrics
         lStats.fitPolynomial(bestDegree)
-        trial = lStats.getPolynomialMaxima(0.0, 100.0, 50.0)
-        critVals = list()
-        critRadii = list()
-        for curr in trial.toArray():
-            critVals.append(curr.rawY(cal))
-            critRadii.append(curr.rawX(cal))
+        saveShollPlots(lStats, saveLoc + "Sholl Fit " + cellName + ".tif")
 
-    plotFit = ShollPlot(lStats).getImagePlus()
+        maskMetrics = addPolyFitToMaskMetrics(lStats, cal, maskMetrics, bestDegree)
 
-    plotFitLoc = saveLoc + "Sholl Fit " + cellName + ".tif"
-
-    IJ.save(plotFit, plotFitLoc)
-
-    maskMetrics['Kurtosis (fit)'] =  lStats.getKurtosis(True) if bestDegree != -1 else 'NaN'
-    maskMetrics['Ramification Index (fit)'] = lStats.getRamificationIndex(True) if bestDegree != -1 else 'NaN'
-    maskMetrics['Critical Value'] =  sum(critVals) / len(critVals)  if bestDegree != -1 else 'Nan'
-    maskMetrics['Critical Radius'] =  sum(critRadii) / len(critRadii)  if bestDegree != -1 else 'Nan'
-    maskMetrics['Mean Value'] =  lStats.getMean(True) if bestDegree != -1 else 'NaN'
-    maskMetrics['Polynomial Degree'] =  bestDegree if bestDegree != -1 else 'Nan'
-
-    # Save our file
-    with open(writeResultsLoc, 'wb') as f:
-        writer = csv.writer(f)
-        writer.writerow(list(maskMetrics.keys()))
-        writer.writerow(list(maskMetrics.values()))
+        # Save our updated mask metrics
+        saveMaskMetrics(saveLoc, cellName, maskMetrics)
     
 
-# For this demo we are going to use the ddaC sample image
+# Get the arguments passed to the function from our ImageJ macro
 args = getArgument()
+
+# Format these arguments as a dictionary and then extract the relevant values
 arg_dict = dict([x.split("=") for x in args.split(",")])
 startRad = float(arg_dict['startRad'])
 stepSize = float(arg_dict['stepSize'])

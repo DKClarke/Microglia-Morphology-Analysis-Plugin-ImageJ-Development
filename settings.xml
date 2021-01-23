@@ -5,7 +5,7 @@
     <profile>
       <id>compiler</id>
         <properties>
-          <JAVA_HOME>/Library/Java/JavaVirtualMachines/jdk1.8.0_271.jdk</JAVA_HOME>
+          <JAVA_HOME>JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk1.8.0_271.jdk/Contents/Home</JAVA_HOME>
         </properties>
     </profile>
   </profiles>

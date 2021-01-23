@@ -59,6 +59,13 @@
 		</contributor>
 	</contributors>
 
+	<mailingLists>
+		<mailingList>
+			<name>Image.sc Forum</name>
+			<archive>https://forum.image.sc/tags/imagej</archive>
+		</mailingList>
+	</mailingLists>
+
 	<scm>
 		<connection>scm:git:git://github.com/DAZN-DKClarke/ImageJMicroMorphJarTest</connection>
 		<developerConnection>scm:git:git@github.com:DAZN-DKClarke/ImageJMicroMorphJarTest</developerConnection>

@@ -398,7 +398,7 @@ function createLRImage(imageLoc, LRCoords, LRLengthArray) {
 function returnMaxAtPoint(xPoint, yPoint, windowName) {
 	selectWindow(windowName);
 	run("Select None");
-	topValue = getPixel(xPoint, yPoint);
+	topValue = getPixel(xPoint, yPoint)-1;
 
 	return topValue;
 }
@@ -450,6 +450,7 @@ function getConnectedMask(xCoord, yCoord, thresholdVal) {
 	makePoint(xCoord, yCoord);
 	setBackgroundColor(0,0,0);
 	selectWindow("LR");
+
 	run("Find Connected Regions", "allow_diagonal display_image_for_each start_from_point regions_for_values_over="+thresholdVal+" minimum_number_of_points=1 stop_after=1");
 	imgNamemask=getTitle();
 

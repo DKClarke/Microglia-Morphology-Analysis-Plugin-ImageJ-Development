@@ -26,7 +26,7 @@
 	<licenses>
 		<license>
 			<name>Simplified BSD License</name>
-			<distribution>https://github.com/DAZN-DKClarke/ImageJMicroMorphJarTest</distribution>
+			<distribution>https://github.com/DAZN-DKClarke/Microglia-Morphology-Analysis-Plugin-ImageJ-Development</distribution>
 		</license>
 	</licenses>
 
@@ -67,14 +67,14 @@
 	</mailingLists>
 
 	<scm>
-		<connection>scm:git:git://github.com/DAZN-DKClarke/ImageJMicroMorphJarTest</connection>
-		<developerConnection>scm:git:git@github.com:DAZN-DKClarke/ImageJMicroMorphJarTest</developerConnection>
+		<connection>scm:git:git://github.com/DAZN-DKClarke/Microglia-Morphology-Analysis-Plugin-ImageJ-Development</connection>
+		<developerConnection>scm:git:git@github.com:DAZN-DKClarke/Microglia-Morphology-Analysis-Plugin-ImageJ-Development</developerConnection>
 		<tag>HEAD</tag>
-		<url>https://github.com/DAZN-DKClarke/ImageJMicroMorphJarTest</url>
+		<url>https://github.com/DAZN-DKClarke/Microglia-Morphology-Analysis-Plugin-ImageJ-Development</url>
 	</scm>
 	<issueManagement>
 		<system>GitHub Issues</system>
-		<url>https://github.com/DAZN-DKClarke/ImageJMicroMorphJarTest/issues</url>
+		<url>https://github.com/DAZN-DKClarke/Microglia-Morphology-Analysis-Plugin-ImageJ-Development/issues</url>
 	</issueManagement>
 	<ciManagement>
 		<system>None</system>

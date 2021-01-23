@@ -703,8 +703,6 @@ function blurDetector(zPlaneWindow){
 
 }
 
-//We're up to here in terms of checking all the functions in this module
-
 function collapseArrayValuesIntoString(array, collapseCharacter) {
 	//This loop strings together the names stored in the arrayIn into a 
 	//concatenated string (called strung) that can be input into the substack 
@@ -745,20 +743,19 @@ function makeSubstackOfSlices(windowName, renameTo, sliceArray) {
 
 function registerReferenceFrame(windowName) {
 
+	//Here we register an image to itself first using the translation then using the affine method
 	run("MultiStackReg", "stack_1=["+windowName+"] action_1=Align file_1=[]  stack_2=None action_2=Ignore file_2=[] transformation=[Translation]");
 	run("MultiStackReg", "stack_1=["+windowName+"] action_1=Align file_1=[]  stack_2=None action_2=Ignore file_2=[] transformation=[Affine]");
 
 
 }
 
-//Part of motion processing, takes an array (currentStackSlices), removes zeros from it, then
-//creates a string of the numbers in the array before then making a substack of these slices
-//from an imagesInput[i] window, registering them if necessary, before renaming them
-//according to the info in motionArtifactRemoval
+//Part of motion processing, takes an array (framesFlaggedForRetention) of images to turn into a reference frame,
+//make take the images in the array from currentSubstackWindowName and turn them into a substack
+//that we rename to renameTo, create an average projection of these frames 
 function createReferenceFrame(framesFlaggedForRetention, currentSubstackWindowName, renameTo) {
 	
-	//Here we order then cutoff the zeros so we get a small array of the 
-	//slices to be retained
+	//Remove zeros from the array of images that we want to make a substack from
 	framesToRetain=Array.deleteValue(framesFlaggedForRetention, 0);
 
 	makeSubstackOfSlices(currentSubstackWindowName, renameTo, framesToRetain);
@@ -786,6 +783,8 @@ function createReferenceFrame(framesFlaggedForRetention, currentSubstackWindowNa
 
 }
 
+//Adds our reference frame ontop of a stack, registers that stack to the reference frame using
+//translation, then remove the reference frame
 function registerToReferenceFrame(referenceFrame, zFramesWindow){
 
 	print("Registering to reference frame");
@@ -802,6 +801,8 @@ function registerToReferenceFrame(referenceFrame, zFramesWindow){
 
 }
 
+//Get statistics from the slices in our stack, either the mean or the max
+//grey value
 function getSliceStatistics(imageName, value) {
 
 	if(value != "mean" || value != "max") {
@@ -832,28 +833,26 @@ function getSliceStatistics(imageName, value) {
 }
 
 function setToZeroIfCutoff(inputArray, framesPerPlane, rankCutoff, direction) {
-	//Cutoff routine
-		
-	//This cutoff routine takes the measured square differences of each 
-	//slice, and ranks them highest to lowest. We then select the best of 
-	//the images (those with the lowest square differences). In this case we 
-	//select the FramesToKeep lowest images i.e. if we want to keep 5 frames 
-	//per TZ point, we keep the 5 lowest square difference frames per FZ.
-
-	//Here we rank the array twice, this is necessary to get the ranks of 
-	//the slices so that the highest sq diff value has the highest rank and 
-	//vice versa
+	
+	//Get the ranks of the values in our input array as rankedArray
 	preRankedOutput=Array.rankPositions(inputArray);
 	rankedArray=Array.rankPositions(preRankedOutput);
 
-	//For each slice in the stack, store the maximum pixel value of the laplacian filtered slice in this
-	//timepoint's results
+	//For each slice in the stack, get an array that has each slice as a value in it
 	framesToKeep = getArrayOneToMaxValue(framesPerPlane);
+
+	//For the number of frames we're retaining per Z plane
 	for(currFrame = 0; currFrame < framesPerPlane; currFrame++) {	
+
+		//If we're running the function to remove values below our cutoff, set these
+		//slice indices to 0
 		if(direction == 'below'){
 			if (rankedArray[currFrame]<(rankedArray.length-rankCutoff)) {
 				framesToKeep[currFrame] = 0;
 			}
+
+		//If we're running the function to remove values above our cutoff, set these
+		//slice indices to 0
 		} else if(direction == 'above') {
 			if (rankedArray[currFrame] > rankCutoff-1) {
 				framesToKeep[currFrame] = 0;
@@ -863,11 +862,14 @@ function setToZeroIfCutoff(inputArray, framesPerPlane, rankCutoff, direction) {
 		}
 	}
 
+	//Return our array with slices that we're keeping, and 0's for the ones we're not
 	return framesToKeep;
 
 
 }
 
+//Return an array of the mean grey value of the difference for each slice
+//between the reference frame and subName
 function diffDetector(referenceFrame, subName) {
 
 	print("Detecting frames least different from reference");
@@ -939,13 +941,17 @@ function closeImages(toClose) {
 	}
 }
 
-function concatenateArrayOfImages(imageArray, collapsedName) {
+//Take an array of the selected images (imageArray) that we're going to use to create a cleaned version fo our collapsedName image
+//Format a string that we can pass to the concenate function so that we can extract them
+function makeImageFromChosenFrames(imageArray, collapsedName) {
 
+	//Format our imageArray into an array of strings taht we can collapse and use to extract chosen frames
 	arrayOfFormattedNames = newArray(imageArray.length);
 	for(currElement = 1; currElement < imageArray.length + 1; currElement++){
 		arrayOfFormattedNames[currElement-1] = "image" + currElement + "=" + imageArray[currElement-1];
 	}
 
+	//Collapse the frames then extract them from collapsedName
 	forConcat = collapseArrayValuesIntoString(arrayOfFormattedNames, " ");
 	if(imageArray.length>1) {
 		run("Concatenate...", " title = ["+collapsedName+"] "+forConcat+"");
@@ -961,11 +967,13 @@ function concatenateArrayOfImages(imageArray, collapsedName) {
 
 function formatTimepointStack(timepointStack, numberOfZPlanes, diffDetectorFrames) {
 
+	//Take our timepoint stack, register it using translation, convert to 8 bit
 	print("Registering timepoint stack");
 	run("MultiStackReg", "stack_1="+timepointStack+" action_1=Align file_1=[] stack_2=None action_2=Ignore file_2[] transformation=[Translation]");
 	selectWindow(timepointStack);
 	run("8-bit");
 
+	//Reorder the Z frames, register using affine
 	print("Correcting for discrepancies in Z location");
 	zSpaceCorrection(timepointStack, numberOfZPlanes, timepointStack);
 	selectWindow(timepointStack);
@@ -989,53 +997,62 @@ function formatTimepointStack(timepointStack, numberOfZPlanes, diffDetectorFrame
 
 function manualCreateCleanedFrame(framesPerPlane, zPlane, renameAs, manuallyChosenFrames) {
 
-	//Here we create substacks from our input image - one substack 
-	//corresponding to all the frames at one Z point
+	//Create a substack of all the frames at this zPlane
 	subName = makeZPlaneSubstack(framesPerPlane, zPlane, renameAs);
 
+	//Create a reference frame from this stack using the manuallyChosenFrames
 	referenceFrameDiff = "diffDetectZPlane" + zPlane;
 	createReferenceFrame(manuallyChosenFrames, subName, referenceFrameDiff);
 	
 	selectWindow(subName);
 	run("Close");
 
+	//Return the name of our reference frame
 	return referenceFrameDiff;
 
 }
 
 function autoCreateCleanedFrame(framesPerPlane, zPlane, renameAs, blurDetectorFrames, diffDetectorFrames) {
 
-	//Here we create substacks from our input image - one substack 
-	//corresponding to all the frames at one Z point
+	//Create a substack of all the frames at this zPlane
 	subName = makeZPlaneSubstack(framesPerPlane, zPlane, renameAs);
 
+	//Get an array of the blur levels at each slice
 	blurDetectorOutput = blurDetector(subName);
 	
+	//Get the indices of the frames to retain that are the least blurry
 	framesToKeepBlur =  setToZeroIfCutoff(blurDetectorOutput, framesPerPlane, blurDetectorFrames, "below");
 
+	//Create a reference frame from these frames
 	referenceFrameBlur = "blurDetectZPlane" + zPlane;
 	createReferenceFrame(framesToKeepBlur, subName, referenceFrameBlur);
 
+	//Register our original Z substack to this reference frame
 	registerToReferenceFrame(referenceFrameBlur, subName);
 
+	//Of our newly registered substack, get an array indiciating the difference of these frames
+	//to the reference frame
 	diffDetectorOutput = diffDetector(referenceFrameBlur, subName);	
 
+	//Get the indices of frames to retain that are teh least different
 	framesToKeepDiff =  setToZeroIfCutoff(diffDetectorOutput, framesPerPlane, diffDetectorFrames, "above");
 	
+	//Create a reference frame from these least different frames
 	referenceFrameDiff = "diffDetectZPlane" + zPlane;
 	createReferenceFrame(framesToKeepDiff, subName, referenceFrameDiff);
 	
 	selectWindow(subName);
 	run("Close");
 
+	//Return the name of this final reference frame
 	return referenceFrameDiff;
 	
 }
 
 
-function createCleanedTimepoint(renameAs, imagePath, currentTimepoint, iniValues, blurDetectorFrames, diffDetectorFrames, manuallyChosenFrames) {
+function createCleanedTimepoint(renameAs, imagePath, iniValues, blurDetectorFrames, diffDetectorFrames, manuallyChosenFrames) {
 
-	//Get out the current timepoint, split it into a stack for each frame (i.e. 14 stacks of 26 slices)
+	//Get out the current timepoint from our input image
 	selectWindow(File.getName(imagePath));
 	run("Duplicate...", "duplicate");
 	rename("Timepoint");
@@ -1043,31 +1060,47 @@ function createCleanedTimepoint(renameAs, imagePath, currentTimepoint, iniValues
 	numberOfZPlanes = iniValues[3];
 	framesPerPlane = iniValues[4];
 
+	//Create an array with one index for each Z plane
 	finalZFrameImages = newArray(numberOfZPlanes);
+
 	//Loop through all Z points in our image
 	for(zPlane=1; zPlane<(numberOfZPlanes + 1); zPlane++) {
 
+		//If we're not creating a cleaned timepoint from manually chosen frames
 		if(manuallyChosenFrames[0] == 'false') {
+
+			//Automatically get a cleaned frames for this Z point
 			cleanedZFrame = autoCreateCleanedFrame(framesPerPlane, zPlane, renameAs, blurDetectorFrames, diffDetectorFrames);
+
+		//Else we're doing this manually
 		} else {
+
+			//Get the manually chosen frames for this Z plane
 			manualFramesThisZ = Array.slice(manuallyChosenFrames, (zPlane - 1) * framesPerPlane, framesPerPlane * zPlane);
 			keptFramesRaw = Array.deleteValue(manualFramesThisZ, 0);
 			keptFrames = keptFramesRaw.length;
+
+			//If for some reason the chosen frames is more than what the user specified in the inputs, print this
 			if(keptFrames != diffDetectorFrames) {
 				print("Manually retained frames per Z: ", keptFrames);
 				print("Number of frames chosen to average over: ", diffDetectorFrames);
 				exit("Number of frames chosen manually doesn't equal number of frames chosen to average over in this run. See log for info");
 			}
+
+			//Manually extract a cleaned Z frame
 			cleanedZFrame =  manualCreateCleanedFrame(framesPerPlane, zPlane, renameAs, manualFramesThisZ);
 		}
 
+		//Store the names of the images for each cleaned Z frame
 		finalZFrameImages[zPlane-1] = cleanedZFrame;
 
 	}
 
-	timepointStack = "timepoint" + currentTimepoint;
-	concatenateArrayOfImages(finalZFrameImages, timepointStack);
+	//Make our cleaned timepoint stack from these frames
+	timepointStack = "timepoint" + 1;
+	makeImageFromChosenFrames(finalZFrameImages, timepointStack);
 
+	//Format it
 	formatTimepointStack(timepointStack, numberOfZPlanes, diffDetectorFrames);
 
 	selectWindow(renameAs);
@@ -1077,6 +1110,8 @@ function createCleanedTimepoint(renameAs, imagePath, currentTimepoint, iniValues
 
 }
 
+//Remove the extra space from the canvas that we added on earlier to facilitate registration without
+//losing image information
 function removeExtraSpace(finalStack, renameAs) {
 
 	selectWindow(finalStack);
@@ -1113,6 +1148,7 @@ function removeExtraSpace(finalStack, renameAs) {
 
 }
 
+//If the image isn't already calibrated, calibrate it using iniValues
 function calibrateImage(windowName, iniValues) {
 
 	selectWindow(windowName);
@@ -1129,38 +1165,38 @@ function calibrateImage(windowName, iniValues) {
 	
 }
 
-function createCleanedStack(imagePath, timepoints, iniValues, blurDetectorFrames, diffDetectorFrames, manuallyChosenFrames) {
+function createCleanedStack(imagePath, iniValues, blurDetectorFrames, diffDetectorFrames, manuallyChosenFrames) {
 
-		//Reorder each individual timepoint stack in Z so that any out of position slices are positioned correctly for motion artifact detection and removal
-		//Go through each timepoint
+		//Get the total number of frames in our image
 		framesPerPlane = iniValues[4];
 		numberOfZPlanes = iniValues[3];
-		framesPerTimepoint = framesPerPlane * numberOfZPlanes;
+		totalFrames = framesPerPlane * numberOfZPlanes;
 
-		finalTimepointImages = newArray(timepoints);
-		for(currentTimepoint = 1; currentTimepoint < timepoints+1; currentTimepoint++) {
-
-			renameAs = "Timepoint";
-			manualFramesThisTimepoint = newArray('false');
-			if(manuallyChosenFrames[0] != 'false') {
-				manualFramesThisTimepoint = Array.slice(manuallyChosenFrames, (currentTimepoint - 1) * framesPerTimepoint, framesPerTimepoint * currentTimepoint);
-			}
-
-			timepointStack = createCleanedTimepoint(renameAs, imagePath, currentTimepoint, iniValues, blurDetectorFrames, diffDetectorFrames, manualFramesThisTimepoint);
-			finalTimepointImages[currentTimepoint-1] = timepointStack;
-
+		//If we have manually chosen frames, get these
+		renameAs = "Timepoint";
+		manualFramesThisTimepoint = newArray('false');
+		if(manuallyChosenFrames[0] != 'false') {
+			manualFramesThisTimepoint = manuallyChosenFrames;
 		}
 
+		//Create a cleaned timepoint from our image, either using manual or automatic methods
+		timepointStack = createCleanedTimepoint(renameAs, imagePath, iniValues, blurDetectorFrames, diffDetectorFrames, manualFramesThisTimepoint);
+		finalTimepointImages = newArray(1);
+		finalTimepointImages[0] = timepointStack;
+
+		//Create a final image using the chosen frames
 		finalStack = "outputStack";
-		concatenateArrayOfImages(finalTimepointImages, finalStack);
+		makeImageFromChosenFrames(finalTimepointImages, finalStack);
 
 		//Close the original input image and concatenate all the registered timepoint images
 		selectWindow(File.getName(imagePath));
 		run("Close");
 
+		//Remove the extra space we padded our image with
 		outputImageName = File.getName(imagePath);
 		removeExtraSpace(finalStack, outputImageName);
-	
+		
+		//Calibrate our final image
 		calibrateImage(outputImageName, iniValues);
 
 }
@@ -1173,11 +1209,13 @@ function saveAndMoveOutputImage(imagePath, directories) {
 	directoryToMake = newArray(directories[1]+noExtension+"/");
 	makeDirectories(directoryToMake);
 
+	//Save our image
 	saveName =  noExtension + " processed.tif";
 	selectWindow(File.getName(imagePath));
 	saveLoc = directoryToMake[0] + saveName;
 	saveAs("tiff", saveLoc);
 
+	//Move our image from the input folder to the done folder
 	if(File.exists(directories[2]+imagesToProcessArray[currImage])) {
 		print("Image already in done folder");
 	} else {
@@ -1190,6 +1228,7 @@ function saveAndMoveOutputImage(imagePath, directories) {
 		}
 	}
 
+	//Close our saved image
 	selectWindow(saveName);
 	run("Close");
 
@@ -1198,10 +1237,13 @@ function saveAndMoveOutputImage(imagePath, directories) {
 
 function createProcessedImageStacks(imagesToProcessArray, directories, iniValues, preProcStringToFind, blurDetectorFrames, diffDetectorFrames, autoProcessed, manualProcessed, imageName, autoPassedQA, manualPassedQA) {
 
+	//If we have images to process
 	if(imagesToProcessArray[0] != 0) {
 
+		//For each image
 		for(currImage = 0; currImage<imagesToProcessArray.length; currImage++) {
 
+			//Find the index of our current image to process in our imageName array
 			imageNameIndex = 0;
 			for(currIndex = 0; currIndex < imageName.length; currIndex++) {
 				if(imageName[currIndex] == imagesToProcessArray[currImage]) {
@@ -1209,15 +1251,23 @@ function createProcessedImageStacks(imagesToProcessArray, directories, iniValues
 					break;
 				}
 			}
+
+			imageNameIndex = findMatchInArray(imagesToProcessArray[currImage], imageName);
+
+			if(imageNameIndex == -1) {
+				exit("Issue here at line 1258");
+			}
 			
 			print("Creating cleaned stack for ", imagesToProcessArray[currImage]);
 			imagePath = directories[0] + imagesToProcessArray[currImage];
-			timepoints =  1;
 			
+			//Adjust the contrast in the stack
 			stackContrastAdjust(imagesToProcessArray[currImage]);
 			
+			//Expand its canvas
 			expandCanvas(imagesToProcessArray[currImage]);
 	
+			//Get our manually chosen frames if they exist
 			slicesToUseFile = directories[1] + File.getNameWithoutExtension(imagesToProcessArray[currImage]) + "/Slices To Use.csv";
 			manuallyChosenFrames = newArray('false');
 			if(File.exists(slicesToUseFile) == 1) {
@@ -1226,13 +1276,16 @@ function createProcessedImageStacks(imagesToProcessArray, directories, iniValues
 			} else {
 				print("Automatically choosing frames to create processed stack for", imagesToProcessArray[currImage]);
 			}	
-		
-			createCleanedStack(imagePath, timepoints, iniValues, blurDetectorFrames, diffDetectorFrames, manuallyChosenFrames);
-		
+			
+			//Create a cleaned stack using these frames, or manually chosen frames
+			createCleanedStack(imagePath, iniValues, blurDetectorFrames, diffDetectorFrames, manuallyChosenFrames);
+			
+			//Save the output and move it to the done folder
 			saveAndMoveOutputImage(imagePath, directories);
 	
 			print("Image processing for ", imagesToProcessArray[currImage], " complete");
 
+			//Set our processing values to 1 
 			if(File.exists(slicesToUseFile) == 1) {
 				manualProcessed[imageNameIndex] = 1;
 			} else {
@@ -1252,13 +1305,14 @@ function createProcessedImageStacks(imagesToProcessArray, directories, iniValues
 
 function findMatchInArray(valueToFind, checkInArray) {
 
-	//Check in the other arrays
+	//Return the index where our valueToFind exists in our checkInArray
 	for(checkAgainst = 0; checkAgainst < checkInArray.length; checkAgainst ++) {
 		if(valueToFind == checkInArray[checkAgainst]) {
 			return checkAgainst;
 		}
 	}
 
+	//If it's not found, return -1
 	return -1;
 
 }

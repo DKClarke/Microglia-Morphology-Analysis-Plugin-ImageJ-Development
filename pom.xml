@@ -15,30 +15,29 @@
 	<artifactId>microglia-morphology-analysis</artifactId>
 	<version>0.1.0</version>
 
-	<name>Script Collection</name>
-	<description>A Maven project collecting ImageJ scripts.</description>
-	<url>N/A</url>
-	<inceptionYear>2017</inceptionYear>
+	<name>Microglia Morphology Analysis ImageJ Plugin</name>
+	<description>A plugin used to facilitate a pipeline of analysis of microglial morphology.</description>
+	<url>https://github.com/BrainEnergyLab/Inflammation-Index</url>
+	<inceptionYear>2021</inceptionYear>
 	<organization>
-		<name>My Company</name>
-		<url>https://mycompany.com/</url>
+		<name>Dr. Devin Clarke, Dr. Catherine Hall, Dr. Hans Crombag</name>
+		<url>http://www.brainenergylab.com/</url>
 	</organization>
 	<licenses>
 		<license>
 			<name>Simplified BSD License</name>
-			<distribution>repo</distribution>
+			<distribution>https://github.com/DAZN-DKClarke/ImageJMicroMorphJarTest</distribution>
 		</license>
 	</licenses>
 
 	<developers>
 		<!-- See https://imagej.net/Team -->
 		<developer>
-			<id>imagejan</id>
-			<name>Jan Eglinger</name>
-			<url>https://imagej.net/User:Eglinger</url>
+			<name>Devin Clarke</name>
+			<url> www.linkedin.com/in/devin-clarke241292/</url>
 			<roles>
-				<role>founder</role>
 				<role>lead</role>
+				<role>developer</role>
 				<role>developer</role>
 				<role>debugger</role>
 				<role>reviewer</role>
@@ -49,33 +48,26 @@
 	</developers>
 	<contributors>
 		<contributor>
-			<name>Curtis Rueden</name>
-			<url>https://imagej.net/User:Rueden</url>
-			<properties><id>ctrueden</id></properties>
+			<name>Catherine Hall</name>
+			<url>https://www.researchgate.net/profile/Catherine_Hall</url>
+			<properties></properties>
 		</contributor>
 		<contributor>
-			<name>Stefan Helfrich</name>
-			<url>https://imagej.net/User:Stelfrich</url>
-			<properties><id>stelfrich</id></properties>
+			<name>Hans Crombag</name>
+			<url>https://www.researchgate.net/profile/Hans_Crombag2</url>
+			<properties></properties>
 		</contributor>
 	</contributors>
 
-	<mailingLists>
-		<mailingList>
-			<name>Image.sc Forum</name>
-			<archive>https://forum.image.sc/tags/imagej</archive>
-		</mailingList>
-	</mailingLists>
-
 	<scm>
-		<connection>scm:git:git://github.com/imagej/example-script-collection</connection>
-		<developerConnection>scm:git:git@github.com:imagej/example-script-collection</developerConnection>
+		<connection>scm:git:git://github.com/DAZN-DKClarke/ImageJMicroMorphJarTest</connection>
+		<developerConnection>scm:git:git@github.com:DAZN-DKClarke/ImageJMicroMorphJarTest</developerConnection>
 		<tag>HEAD</tag>
-		<url>https://github.com/imagej/example-script-collection</url>
+		<url>https://github.com/DAZN-DKClarke/ImageJMicroMorphJarTest</url>
 	</scm>
 	<issueManagement>
 		<system>GitHub Issues</system>
-		<url>https://github.com/imagej/example-script-collection/issues</url>
+		<url>https://github.com/DAZN-DKClarke/ImageJMicroMorphJarTest/issues</url>
 	</issueManagement>
 	<ciManagement>
 		<system>None</system>

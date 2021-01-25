@@ -222,6 +222,40 @@ function Housekeeping() {
 	}
 }
 
+//This function removes any elements from an input array that conatins the string 'string' and returns it
+function filterArray(fileLocations, string, keepFlag) {
+
+	//For each element in the array
+	for (i = 0; i < fileLocations.length; i++) {
+
+		//Find whether the string exists in the current element
+		stringInIndex = indexOf(fileLocations[i], string);
+
+		//If we're using the function to keep elements that have this string
+		if(keepFlag == true) {
+
+			//Flag elements that don't have the string with 0's
+			if(stringInIndex < 0) {
+				fileLocations[i] = 0;
+			}
+
+		//If we're using the function to remove elements that have this string
+		} else {
+
+			//Set elements that have the string to 0
+			if(stringInIndex > -1) {
+				fileLocations[i] = 0;
+			}
+		}
+	}
+
+	//Return an array where these elements are removed
+	toReturn = Array.deleteValue(fileLocations, 0);
+
+	return toReturn;
+	
+}
+
 //Get the number of images to display onscreen
 onScreen = getNumberOfImagesToDisplay();
 

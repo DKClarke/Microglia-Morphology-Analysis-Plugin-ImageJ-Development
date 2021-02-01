@@ -573,8 +573,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 				//Set the path to where we copy our analysed cells to so we can run a fractal analysis on this folder in 
 				//batch at a later timepoint - if this directory doesn't exist, make it
 				fracLacPath = directories[1]+"fracLac/";
-				fracLacTCSPath = fracLacPath + "TCS"+tcsValue[TCSLoops] + "/";
-				makeDirectories(newArray(fracLacPath, fracLacTCSPath));
+				makeDirectories(newArray(fracLacPath));
 
 				//If we haven't finished analysing this TCS value
 				if(tcsAnalysed[TCSLoops] == -1) {
@@ -625,7 +624,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 							"# Slab voxels", "Average Branch Length", "# Triple points", "# Quadruple points", 
 							"Maximum Branch Length", "Longest Shortest Path", "SkelArea");
 
-							cellFracLacPath = fracLacTCSPath + maskName[currCell];
+							cellFracLacPath = fracLacPath + File.getNameWithoutExtension(imageName[currImage]) + " TCS"+tcsValue[TCSLoops] + " " + maskName[currCell]; 
 								
 							//If we haven't already copied the cell to the fracLac folder, do so
 							if(File.exists(cellFracLacPath) == 0) {

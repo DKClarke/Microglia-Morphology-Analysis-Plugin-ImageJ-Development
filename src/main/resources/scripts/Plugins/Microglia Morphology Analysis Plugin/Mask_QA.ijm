@@ -301,6 +301,8 @@ function saveTCSStatusTable(currentSubstack, tcsValue, tcsMasksGenerated, tcsQCC
 
 function getCellMaskApproval(cellMaskLoc, cellLRLoc) {
 
+	roiManager("show all");
+
 	//Open this TCS's version of the mask
 	open(cellMaskLoc);
 	selectWindow(File.getName(cellMaskLoc));
@@ -308,16 +310,21 @@ function getCellMaskApproval(cellMaskLoc, cellLRLoc) {
 	
 	//Create a selection from the mask
 	run("Create Selection");
-	getSelectionCoordinates(xpoints, ypoints);
+	roiManager("add");
+	//getSelectionCoordinates(xpoints, ypoints);
 
 	//Open the LR associated with this mask and apply the selection
 	open(cellLRLoc);
 	selectWindow(File.getName(cellLRLoc));
 	run("Select None");
-	makeSelection('freehand', xpoints, ypoints);
+	roiManager("select", 0);
+	//makeSelection('freehand', xpoints, ypoints);
 
 	setBatchMode("Show");
 	approved = userApproval("Check image for issues", "Mask check", "Keep the image?");
+
+	roiManager("deselect");
+	roiManager("delete");
 
 	return approved;
 
@@ -372,9 +379,13 @@ function generateCellSomaMask(cellMaskLoc, cellLRLoc) {
 	run("Clear Results");
 	run("Analyze Particles...", "size=30-Infinity circularity=0.60-1.00 show=Masks display clear");
 	getStatistics(area, mean, min, max, std, histogram);
-	
-	if(getResult("Area", 0) == area) {
-		adjustedN = nResults - 1;
+
+	if(nResults > 0) {
+		if(getResult("Area", 0) == area) {
+			adjustedN = 0;
+		} else {
+			adjustedN = nResults;
+		}
 	} else {
 		adjustedN = nResults;
 	}

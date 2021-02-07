@@ -371,8 +371,15 @@ function generateCellSomaMask(cellMaskLoc, cellLRLoc) {
 	run("Auto Threshold", "method=Default");
 	run("Clear Results");
 	run("Analyze Particles...", "size=30-Infinity circularity=0.60-1.00 show=Masks display clear");
+	getStatistics(area, mean, min, max, std, histogram);
+	
+	if(getResult("Area", 0) == area) {
+		adjustedN = nResults - 1;
+	} else {
+		adjustedN = nResults;
+	}
 
-	return nResults;
+	return adjustedN;
 
 }
 

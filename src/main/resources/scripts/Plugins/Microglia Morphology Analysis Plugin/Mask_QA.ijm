@@ -321,7 +321,7 @@ function getCellMaskApproval(cellMaskLoc, cellLRLoc) {
 	//makeSelection('freehand', xpoints, ypoints);
 
 	setBatchMode("Show");
-	approved = userApproval("Check image for issues", "Mask check", "Keep the image?");
+	approved = userApproval("Check image for issues", "Mask check", "If the image is acceptable, tick the checkbox \nto keep the image");
 
 	roiManager("deselect");
 	roiManager("delete");
@@ -509,7 +509,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 								getSelectionCoordinates(somaXpoints, somaYpoints);
 								selectWindow(File.getName(cellLRLoc));
 								makeSelection('freehand', somaXpoints, somaYpoints);
-								keepSoma = userApproval("Check image soma mask", "Soma check", "Keep the soma mask?");
+								keepSoma = userApproval("Check image soma mask", "Soma check", "If the soma mask is acceptable, tick the checkbox \nto keep the soma mask");
 
 							}
 

@@ -687,11 +687,23 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 							selectWindow(File.getName(cellMaskLoc));
 							run("Select None");
 							makePoint(somaCM[0], somaCM[1]);
+							
+							//Look for our .py file in our plugins folder
+							pyLocs = listFilesAndFilesSubDirectories(getDir("plugins"), 'Microglia_Morphology_Analysis_Plugin_Sholl_Analysis_Script.py');
 
-							pyFileLocation = getDir("plugins") + 'Scripts/Microglia_Morphology_Analysis_Plugin_Sholl_Analysis_Script.py';
-							if(File.exists(pyFileLocation) != 1) {
+							//If we've found something
+							if(pyLocs.length > 0) {
+								pyFileLocation = pyLocs[0];
+							//Otherwise exit
+							} else {
 								exit("Microglia_Morphology_Analysis_Plugin_Sholl_Analysis_Script.py not found in the plugins folder at \n" + getDir("plugins"));
 							}
+
+							//If this pyFileLocation actually doesn't point to file, exit
+							if(File.exists(pyFileLocation) != 1){
+								exit("Microglia_Morphology_Analysis_Plugin_Sholl_Analysis_Script.py not found in the plugins folder at \n" + getDir("plugins"));
+							}
+
 							pythonText = File.openAsString(pyFileLocation); 
 							saveShollAs = TCSDir + "/Results/";
 							call("ij.plugin.Macro_Runner.runPython", pythonText, "startRad="+startradius+",stepSize="+iniValues[0]+",saveLoc="+saveShollAs+",maskName="+maskName[currCell]+",tcsVal="+tcsValue[TCSLoops]+"");

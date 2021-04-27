@@ -645,16 +645,20 @@ function stackContrastAdjust(imageName) {
 	//Convert the image to 8-bit
 	run("8-bit");
 	setSlice(1);
-	run("Stack Contrast Adjustment", "is");
-	stackWindow = getTitle();
 
-	//Close the original image
-	selectWindow(imageName);
-	run("Close");
+	if(nSlices > 1) {
+		run("Stack Contrast Adjustment", "is");
+		stackWindow = getTitle();
 
-	//Rename the adjusted image to the original image name
-	selectWindow(stackWindow);
-	rename(imageName);
+		//Close the original image
+		selectWindow(imageName);
+		run("Close");
+
+		//Rename the adjusted image to the original image name
+		selectWindow(stackWindow);
+		rename(imageName);
+	}
+	
 	run("8-bit");
 
 }
@@ -939,17 +943,27 @@ function zSpaceCorrection(inputImage, layersToTest, toRename) {
 	//layersToTest value as the maximum number of layers to check against for z 
 	//positioning
 	selectWindow(inputImage);
-	run("Z-Spacing Correction", "input=[] type=[Image Stack] text_maximally="+layersToTest+" outer_iterations=100 outer_regularization=0.40 inner_iterations=10 inner_regularization=0.10 allow_reordering number=1 visitor=lazy similarity_method=[NCC (aligned)] scale=1.000 voxel=1.0000 voxel_0=1.0000 voxel_1=1.0000 render voxel=1.0000 voxel_0=1.0000 voxel_1=1.0000 upsample=1");
 
-	closeImages(toClose);
+	if(nSlices > 1) {
 
-	//Renames the output image to the toRename variable
-	selectWindow("Z-Spacing: " + inputImage);
-	rename(toRename);
+		run("Z-Spacing Correction", "input=[] type=[Image Stack] text_maximally="+layersToTest+" outer_iterations=100 outer_regularization=0.40 inner_iterations=10 inner_regularization=0.10 allow_reordering number=1 visitor=lazy similarity_method=[NCC (aligned)] scale=1.000 voxel=1.0000 voxel_0=1.0000 voxel_1=1.0000 render voxel=1.0000 voxel_0=1.0000 voxel_1=1.0000 upsample=1");
 
-	//Close the exception that is thrown by the rearranging of stacks
-	selectWindow("Exception");
-	run("Close");
+		closeImages(toClose);
+
+
+		//Renames the output image to the toRename variable
+		selectWindow("Z-Spacing: " + inputImage);
+		rename(toRename);
+
+		//Close the exception that is thrown by the rearranging of stacks
+		selectWindow("Exception");
+		run("Close");
+
+	} else {
+
+		rename(toRename);
+
+	}
 
 }
 
@@ -1163,7 +1177,19 @@ function removeExtraSpace(finalStack, renameAs) {
 	//Min project the mask showing all common pixels to get a single image that we turn into a selection, that we then impose on our concatenated stacks, turn into a proper square,
 	//and then create a new image from the concatenate stacks that should contain no blank space
 	selectWindow(finalStack + "Mask");
-	run("Z Project...", "projection=[Max Intensity]");
+
+	if(nSlices > 1) {
+
+		run("Z Project...", "projection=[Max Intensity]");
+		toClose = newArray(finalStack + "Mask", finalStack, "MAX_" + finalStack + "Mask");
+
+	} else {
+
+		toClose = newArray(finalStack + "Mask", finalStack);
+
+	}
+		
+	
 	run("Create Selection");
 	run("To Bounding Box");
 	
@@ -1172,8 +1198,7 @@ function removeExtraSpace(finalStack, renameAs) {
 	roiManager("Select", 0);
 	run("Duplicate...", "duplicate");
 	rename("dup");
-
-	toClose = newArray(finalStack + "Mask", finalStack, "MAX_" + finalStack + "Mask");
+	
 	closeImages(toClose);
 
 	//As this isn't a timelapse experiment, we can close our original input 

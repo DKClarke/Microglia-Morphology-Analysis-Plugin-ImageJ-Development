@@ -291,13 +291,21 @@ function getNoSubstacks(substacksPossible, iniValues, zBuffer) {
 
 function getSlicesForEachSubstack(noSubstacks, zBuffer) {
 
-	//Fill maskGenerationArray with a string of the range of z planes to include in each substack
-	maskGenerationArray = newArray(noSubstacks);
-	for(currSubstack = 0; currSubstack < noSubstacks; currSubstack++){
-		
-		//Calculate what slices to start and end at for each substack
-		startZ = (zBuffer * (currSubstack+1)) + (currSubstack * 10);
-		maskGenerationArray[currSubstack] = toString(startZ) + '-' + toString(startZ + 10);
+	if(noSubstacks == 0) {
+		maskGenerationArray = newArray(1);
+		maskGenerationArray[0] = '1-1';
+	} else {
+
+		//Fill maskGenerationArray with a string of the range of z planes to include in each substack
+		maskGenerationArray = newArray(noSubstacks);
+	
+		for(currSubstack = 0; currSubstack < noSubstacks; currSubstack++){
+			
+			//Calculate what slices to start and end at for each substack
+			startZ = (zBuffer * (currSubstack+1)) + (currSubstack * 10);
+			maskGenerationArray[currSubstack] = toString(startZ) + '-' + toString(startZ + 10);
+	
+		}
 	}
 
 	return maskGenerationArray;
@@ -316,11 +324,22 @@ function getMaximaCoordinates(imagePath, currMaskGenerationArray) {
 	run("Make Substack...", " slices="+currMaskGenerationArray+"");
 	selectWindow('Raw');
 
+	//If we're working with a stack
+	if(nSlices > 1) {
+		
 	//Average project the substack
 	run("Z Project...", "projection=[Average Intensity]");
 	selectWindow("AVG_"+'Raw');
 	rename("AVG");
-				
+
+	//Else if we're working with a single frame
+	} else {
+		
+		run("Duplicate...", "duplicate");
+		rename("AVG");
+		
+	}
+	
 	//Calibrate this average projection in pixels and convert to 8 bit
 	getDimensions(width, height, channels, slices, frames);
 	run("Properties...", "channels="+channels+" slices="+slices+" frames="+frames+" unit=pixels pixel_width=1 pixel_height=1 voxel_depth=1.0000000");
@@ -689,6 +708,10 @@ for(currImage = 0; currImage < imageName.length; currImage++) {
 
 		//Create an array storing the beginning and ending slices for each substack we're making
 		maskGenerationArray = getSlicesForEachSubstack(substacksPossible[currImage], zBuffer);
+
+		if(substacksPossible[currImage] == 0) {
+			substacksPossible[currImage] = 1;
+		}
 
 		//Here we make any storage folders that aren't related to TCS and 
 		//haven't already been made

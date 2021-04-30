@@ -369,6 +369,16 @@ function getLRCoords(imageLoc, cellLocCoords, LRLengthPixels) {
 		LRCoords[1] = LRHeight - LRLengthPixels;
 	}
 
+	//If our coordinates end up being outside our image (i.e. the image isnt big enough to create a
+	//local region of our specified size) set them to 0
+	if(LRCoords[0] < 0) {
+		LRCoords[0] = 0;
+	}
+
+	if(LRCoords[1] < 0) {
+		LRCoords[1] = 0;
+	}
+
 	//Return our adjusted coordinates for drawing our local region
 	return LRCoords;
 
@@ -379,6 +389,7 @@ function createLRImage(imageLoc, LRCoords, LRLengthArray) {
 
 	//Select our image and clear any selections
 	imageTitle = File.getName(imageLoc);
+		
 	selectWindow(imageTitle);
 	run("Select None");
 
@@ -386,9 +397,7 @@ function createLRImage(imageLoc, LRCoords, LRLengthArray) {
 	makeRectangle(LRCoords[0], LRCoords[1], LRLengthArray[0], LRLengthArray[1]);
 	run("Duplicate...", " ");
 
-	//Rename our LR image as "LR"
-	tifLess = File.getNameWithoutExtension(imageLoc);
-	selectWindow(tifLess + "-1.tif");
+	//Rename our duplicated image as LR
 	rename("LR");
 	run("Select None");
 

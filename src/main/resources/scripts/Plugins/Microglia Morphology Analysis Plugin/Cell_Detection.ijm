@@ -289,7 +289,7 @@ function getNoSubstacks(substacksPossible, iniValues, zBuffer) {
 
 }
 
-function getSlicesForEachSubstack(noSubstacks, zBuffer) {
+function getSlicesForEachSubstack(noSubstacks, zBuffer, iniValues) {
 
 	if(noSubstacks == 0) {
 		maskGenerationArray = newArray(1);
@@ -300,10 +300,13 @@ function getSlicesForEachSubstack(noSubstacks, zBuffer) {
 		maskGenerationArray = newArray(noSubstacks);
 	
 		for(currSubstack = 0; currSubstack < noSubstacks; currSubstack++){
+
+			//Index 0 is xPxlSz, then yPxlSz, zPxlSz, ZperT, FperZ
+			zPxlSz = iniValues[2];
 			
 			//Calculate what slices to start and end at for each substack
-			startZ = (zBuffer * (currSubstack+1)) + (currSubstack * 10);
-			maskGenerationArray[currSubstack] = toString(startZ) + '-' + toString(startZ + 10);
+			startZ = ((zBuffer/zPxlSz) * (currSubstack+1)) + (currSubstack * (10/zPxlSz));
+			maskGenerationArray[currSubstack] = toString(floor(startZ)) + '-' + toString(floor(startZ + (10/zPxlSz)));
 	
 		}
 	}
@@ -322,15 +325,15 @@ function getMaximaCoordinates(imagePath, currMaskGenerationArray) {
 	//Make a substack from this image
 	rename('Raw');
 	run("Make Substack...", " slices="+currMaskGenerationArray+"");
-	selectWindow('Raw');
+	selectWindow("Substack ("+currMaskGenerationArray+")");
 
 	//If we're working with a stack
 	if(nSlices > 1) {
 		
-	//Average project the substack
-	run("Z Project...", "projection=[Average Intensity]");
-	selectWindow("AVG_"+'Raw');
-	rename("AVG");
+		//Average project the substack
+		print('More than 1 slice in substack');
+		run("Z Project...", "projection=[Average Intensity]");
+		rename("AVG");
 
 	//Else if we're working with a single frame
 	} else {
@@ -341,6 +344,7 @@ function getMaximaCoordinates(imagePath, currMaskGenerationArray) {
 	}
 	
 	//Calibrate this average projection in pixels and convert to 8 bit
+	selectWindow('AVG');
 	getDimensions(width, height, channels, slices, frames);
 	run("Properties...", "channels="+channels+" slices="+slices+" frames="+frames+" unit=pixels pixel_width=1 pixel_height=1 voxel_depth=1.0000000");
 	run("8-bit");
@@ -357,6 +361,10 @@ function getMaximaCoordinates(imagePath, currMaskGenerationArray) {
 
 	//Return the array of these cell location coordinates
 	outputArray = Array.concat(xPoints, yPoints);
+
+	setBatchMode("exit and display");
+	waitForUser('');
+	setBatchMode(true);
 
 	return outputArray;
 
@@ -707,7 +715,7 @@ for(currImage = 0; currImage < imageName.length; currImage++) {
 		print(substacksPossible[currImage]);
 
 		//Create an array storing the beginning and ending slices for each substack we're making
-		maskGenerationArray = getSlicesForEachSubstack(substacksPossible[currImage], zBuffer);
+		maskGenerationArray = getSlicesForEachSubstack(substacksPossible[currImage], zBuffer, iniValues);
 
 		if(substacksPossible[currImage] == 0) {
 			substacksPossible[currImage] = 1;

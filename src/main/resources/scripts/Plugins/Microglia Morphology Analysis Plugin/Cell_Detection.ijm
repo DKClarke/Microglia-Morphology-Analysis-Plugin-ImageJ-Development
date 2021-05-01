@@ -362,10 +362,6 @@ function getMaximaCoordinates(imagePath, currMaskGenerationArray) {
 	//Return the array of these cell location coordinates
 	outputArray = Array.concat(xPoints, yPoints);
 
-	setBatchMode("exit and display");
-	waitForUser('');
-	setBatchMode(true);
-
 	return outputArray;
 
 }

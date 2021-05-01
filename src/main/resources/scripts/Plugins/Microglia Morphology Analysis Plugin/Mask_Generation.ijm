@@ -344,6 +344,8 @@ function getLRCoords(imageLoc, cellLocCoords, LRLengthPixels) {
 	selectWindow(File.getName(imageLoc));
 	getDimensions(LRWidth, LRHeight, LRChannels, LRSlices, LRFrames);
 
+	
+
 	//For each of our cell coordinates
 	for(currCoord = 0; currCoord < cellLocCoords.length; currCoord++) {
 
@@ -456,9 +458,9 @@ function getConnectedMask(xCoord, yCoord, thresholdVal) {
 	//the threhsold value in grey intensity
 	print("Finding mask connected to our coordinates ", xCoord, yCoord, " at our threshold ", thresholdVal);
 	selectWindow("LR");
-	makePoint(xCoord, yCoord);
 	setBackgroundColor(0,0,0);
 	selectWindow("LR");
+	makePoint(xCoord, yCoord);
 
 	run("Find Connected Regions", "allow_diagonal display_image_for_each start_from_point regions_for_values_over="+thresholdVal+" minimum_number_of_points=1 stop_after=1");
 	imgNamemask=getTitle();
@@ -817,8 +819,8 @@ function findOrRetrieveOptimalCoordinates(avgProjImageLoc, LRCoords, xCoords, yC
 
 		//Get the coordinates of the maxima in the local region
 		maximaCoordinates = findMaximaInCoords();
-		xOpt[currCell] = maximaCoordinates[0];
-		yOpt[currCell] = maximaCoordinates[1];
+		xOpt[currCell] = floor(maximaCoordinates[0]);
+		yOpt[currCell] = floor(maximaCoordinates[1]);
 
 		//Get the value of the maxima
 		topValue = returnMaxAtPoint(xOpt[currCell], yOpt[currCell], "LR");

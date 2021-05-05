@@ -240,7 +240,7 @@ function getOrCreateTableColumn(tableLoc, columnName, defaultValue, defaultLengt
 }
 
 //Work out whether to proceed with cell detection on this image
-function proceedWithCellDetection(autoPassedQA, manualPassedQA, substacksMade, substacksPossible) {
+function proceedWithCellDetection(autoPassedQA, manualPassedQA, substacksMade, substacksPossible, currImage) {
 
 	//Our default is we don't proceed with cell detection
 	proceed = false;
@@ -697,7 +697,7 @@ substacksMade = getOrCreateTableColumn(maskGenerationStatusLoc, "Number of Subst
 for(currImage = 0; currImage < imageName.length; currImage++) {
 
 	//Calculate if we're to detect cells for it - e.g. if it has passed QA, and we haven't made all the substacks for it
-	proceedCellDetection = proceedWithCellDetection(autoPassedQA, manualPassedQA, substacksMade, substacksPossible);
+	proceedCellDetection = proceedWithCellDetection(autoPassedQA, manualPassedQA, substacksMade, substacksPossible, currImage);
 
 	if(proceedCellDetection == true) {
 
@@ -773,123 +773,135 @@ substacksMade = getOrCreateTableColumn(maskGenerationStatusLoc, "Number of Subst
 //For each image we're processing
 for(currImage = 0; currImage < imageName.length; currImage++) {
 
-	//Here we make any storage folders that aren't related to TCS and 
-	//haven't already been made
-	imageNameRaw = File.getNameWithoutExtension(imageName[currImage]);
+	//Calculate if we're to detect cells for it - e.g. if it has passed QA, and we haven't made all the substacks for it
+	proceedCellDetection = proceedWithCellDetection(autoPassedQA, manualPassedQA, substacksMade, substacksPossible, currImage);
 
-	//For our cell position marking table, get out our columns for this image - unless they don't exist in which case make
-	//them with defaults of -1
-	cellPositionMarkingLoc = directories[1] + imageNameRaw + "/Cell Coordinate Masks/Cell Position Marking.csv";
+	if(proceedCellDetection == true) {
 
-	processed = getOrCreateTableColumn(cellPositionMarkingLoc, "Processed", -1, substacksPossible[currImage]);
-	qcValue = getOrCreateTableColumn(cellPositionMarkingLoc, "QC", -1, substacksPossible[currImage]);
-
-	//If the table is new, fill the substackNames array with our maskGenerationArray values
-	if(File.exists(cellPositionMarkingLoc)!=1) {
-		exit("Error - no Cell Position Marking.csv file for this image even though we're passed the cell detection stage")
-	} else {
-		substackNames = getTableColumn(cellPositionMarkingLoc, "Substack");
-	}
-
-	//For each substack for this image
-	for(currSubstack = 0; currSubstack < substackNames.length; currSubstack++) {
-
-		//If we've made this substack already but haven't quality controlled the cell selection
-		if(processed[currSubstack] == 1 && qcValue[currSubstack] == -1) {
-
-			print('Quality controlling cell detection for:');
-			print(imageName[currImage], ' substack ', substackNames[currSubstack]);
-
-			imageLoc = directories[1]+imageNameRaw+"/Cell Coordinate Masks/CP mask for Substack ("+substackNames[currSubstack]+").tif";
-			tableLoc = directories[1]+imageNameRaw+"/Cell Coordinates/CP coordinates for Substack ("+substackNames[currSubstack]+").csv";
-
-			//Open the image and display the detected cell coordinates on it
-			goodCPs = openDisplayAndApproveCoordinates(imageLoc, tableLoc);
-
-			//If the user isn't happy with the detection
-			if(goodCPs == false) {
-
-				print('User unhappy with automated cell detection');
-
-				//Ask why - detection or registration>
-				reasonsArray = getBadCPReasons();
-				badReg = reasonsArray[0];
-				badDetection = reasonsArray[1];
-
-				//If it's just detection
-				if(badDetection == 1 && badReg == 0) {
-
-					print('Automated cell detection was poor; prompting user to select cells manually');
-
-					//Ask the user to select cells on the image
-					run("Select None");
-					selectedCells = userSelectCells("Click on cells to select for analysis, if any, and click 'ok' when done");
-					
-					//If they\ve selected cells, save them to our substack table and set QC to 1
-					if(selectedCells != -1) {
-						print('User-selected cells being saved to coordinates file');
-						deleted = File.delete(tableLoc);
-						if(deleted != 1) {
-							exit("Issue with deleting coordinates file");
-						}
-						addSelectedCoordinateStoExisting(tableLoc);
-						qcValue[currSubstack] = 1;
-
-					//If the user didn't select any cells, set QC to 0 (for failing QC)
-					} else {
-						qcValue[currSubstack] = 0;
-						print("No cells selected for this substack");
-						print('This substack will be ignored for future steps');
-
-					}
-
-				}
-
-				//If the user selected that the image was badly registered
-				if(badReg == 1) {
-
-					print('User indicated stack was poorly registered; ignoring for future analysis steps');
-
-					//Set QC to 0 for a fail
-					qcValue[currSubstack] = 0;
-					//Do something here? Move it back to input and flag for manual?
-				}
-
-			//If the user is happy with the automated cell selection
-			} else {
-
-				print('User happy with automated cell detection');
-				print('Prompting user to select any additional cells that were missed by automated selection');
-
-				//Set qc to 1 to show we passed
-				qcValue[currSubstack] = 1;
-
-				//Ask the user to select any additional cells they missed
-				roiManager("add")
-				setOption("Show All", true);
-				selectedCells = userSelectCells("Click on cells that were missed by automatic detection, if any, and click 'ok' when done");
-				
-				//If the user clicked on additional cells
-				if(selectedCells !=-1) {
-
-					print('Adding user selected cells to coordinate file');
-					//Since the talbe at tableLoc already exists, we update it
-					addSelectedCoordinateStoExisting(tableLoc);
-
-				}
-
-			}
-
-			saveSubstackStatusTable(substackNames, processed, qcValue, cellPositionMarkingLoc);
-
-			Housekeeping();
-
-
+		//Here we make any storage folders that aren't related to TCS and 
+		//haven't already been made
+		imageNameRaw = File.getNameWithoutExtension(imageName[currImage]);
+	
+		//For our cell position marking table, get out our columns for this image - unless they don't exist in which case make
+		//them with defaults of -1
+		cellPositionMarkingLoc = directories[1] + imageNameRaw + "/Cell Coordinate Masks/Cell Position Marking.csv";
+	
+		print('current image:');
+		print(imageNameRaw);
+		print('debug: substacks possible for curr image:');
+		print(substacksPossible[currImage]);
+	
+		processed = getOrCreateTableColumn(cellPositionMarkingLoc, "Processed", -1, substacksPossible[currImage]);
+		qcValue = getOrCreateTableColumn(cellPositionMarkingLoc, "QC", -1, substacksPossible[currImage]);
+	
+		//If the table is new, fill the substackNames array with our maskGenerationArray values
+		if(File.exists(cellPositionMarkingLoc)!=1) {
+			exit("Error - no Cell Position Marking.csv file for this image even though we're passed the cell detection stage")
+		} else {
+			substackNames = getTableColumn(cellPositionMarkingLoc, "Substack");
 		}
+	
+		//For each substack for this image
+		for(currSubstack = 0; currSubstack < substackNames.length; currSubstack++) {
+	
+			//If we've made this substack already but haven't quality controlled the cell selection
+			if(processed[currSubstack] == 1 && qcValue[currSubstack] == -1) {
+	
+				print('Quality controlling cell detection for:');
+				print(imageName[currImage], ' substack ', substackNames[currSubstack]);
+	
+				imageLoc = directories[1]+imageNameRaw+"/Cell Coordinate Masks/CP mask for Substack ("+substackNames[currSubstack]+").tif";
+				tableLoc = directories[1]+imageNameRaw+"/Cell Coordinates/CP coordinates for Substack ("+substackNames[currSubstack]+").csv";
+	
+				//Open the image and display the detected cell coordinates on it
+				goodCPs = openDisplayAndApproveCoordinates(imageLoc, tableLoc);
+	
+				//If the user isn't happy with the detection
+				if(goodCPs == false) {
+	
+					print('User unhappy with automated cell detection');
+	
+					//Ask why - detection or registration>
+					reasonsArray = getBadCPReasons();
+					badReg = reasonsArray[0];
+					badDetection = reasonsArray[1];
+	
+					//If it's just detection
+					if(badDetection == 1 && badReg == 0) {
+	
+						print('Automated cell detection was poor; prompting user to select cells manually');
+	
+						//Ask the user to select cells on the image
+						run("Select None");
+						selectedCells = userSelectCells("Click on cells to select for analysis, if any, and click 'ok' when done");
+						
+						//If they\ve selected cells, save them to our substack table and set QC to 1
+						if(selectedCells != -1) {
+							print('User-selected cells being saved to coordinates file');
+							deleted = File.delete(tableLoc);
+							if(deleted != 1) {
+								exit("Issue with deleting coordinates file");
+							}
+							addSelectedCoordinateStoExisting(tableLoc);
+							qcValue[currSubstack] = 1;
+	
+						//If the user didn't select any cells, set QC to 0 (for failing QC)
+						} else {
+							qcValue[currSubstack] = 0;
+							print("No cells selected for this substack");
+							print('This substack will be ignored for future steps');
+	
+						}
+	
+					}
+	
+					//If the user selected that the image was badly registered
+					if(badReg == 1) {
+	
+						print('User indicated stack was poorly registered; ignoring for future analysis steps');
+	
+						//Set QC to 0 for a fail
+						qcValue[currSubstack] = 0;
+						//Do something here? Move it back to input and flag for manual?
+					}
+	
+				//If the user is happy with the automated cell selection
+				} else {
+	
+					print('User happy with automated cell detection');
+					print('Prompting user to select any additional cells that were missed by automated selection');
+	
+					//Set qc to 1 to show we passed
+					qcValue[currSubstack] = 1;
+	
+					//Ask the user to select any additional cells they missed
+					roiManager("add")
+					setOption("Show All", true);
+					selectedCells = userSelectCells("Click on cells that were missed by automatic detection, if any, and click 'ok' when done");
+					
+					//If the user clicked on additional cells
+					if(selectedCells !=-1) {
+	
+						print('Adding user selected cells to coordinate file');
+						//Since the talbe at tableLoc already exists, we update it
+						addSelectedCoordinateStoExisting(tableLoc);
+	
+					}
+	
+				}
+	
+				saveSubstackStatusTable(substackNames, processed, qcValue, cellPositionMarkingLoc);
+	
+				Housekeeping();
+	
+	
+			}
+	
+		}
+	
+		print('Quality control of cell detection for ', imageName[currImage], ' complete');
 
 	}
-
-	print('Quality control of cell detection for ', imageName[currImage], ' complete');
 
 }
 

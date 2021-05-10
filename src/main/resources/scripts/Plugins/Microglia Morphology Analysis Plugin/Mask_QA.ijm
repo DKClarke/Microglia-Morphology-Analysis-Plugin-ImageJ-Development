@@ -425,6 +425,8 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 	
 	print("QA'ing masks generated for image ",File.getNameWithoutExtension(imageName[currImage]));
 
+	print('Image number ', currImage, ' out of ', imageName.length);
+
 	imageNameRaw = File.getNameWithoutExtension(imageName[currImage]);
 
 	statusTable = directories[1]+imageNameRaw+"/Cell Coordinate Masks/Cell Position Marking.csv";

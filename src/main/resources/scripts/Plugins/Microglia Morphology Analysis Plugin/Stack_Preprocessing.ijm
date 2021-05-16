@@ -354,7 +354,7 @@ function getManualFlaggedImages(imageName, autoProcessed, autoPassedQA, manualPr
 				if(manualProcessed[currImage] == 0) {
 					
 					if(count > 0) {
-						imagesForMan = Array.concat(imagesForMan, newArray(1));)
+						imagesForMan = Array.concat(imagesForMan, newArray(1));
 					}
 					imagesForMan[count] = imageName[currImage];
 					count++;

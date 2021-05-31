@@ -256,6 +256,14 @@ function getOrCreateTableColumn(tableLoc, columnName, defaultValue, defaultLengt
 		Array.fill(outputArray, defaultValue);
 	}
 
+	//If it exists, make sure its the same length as default, if it's longer,
+	//add that length
+	if(File.exists(tableLoc) == 1 && outputArray.length < defaultLength) {
+		fillWithArray = newArray(defaultLength - outputArray.length);
+		Array.fill(fillWithArray, defaultValue);
+		outputArray = Array.concat(outputArray, fillWithArray);
+	}
+
 	return outputArray;
 }
 

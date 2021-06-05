@@ -237,6 +237,12 @@ function substacksToUse(substackTableLoc, nameCol, processedCol, QCCol) {
 			}
 		}
 
+		//If none of the substacks are ready for analysis, return an array population with the string
+		//'nothing'
+		if(output[0] == 0) {
+			output = newArray('nothing');
+		}
+
 	} else {
 		exit("Substack names column in " + substackTableLoc + " not populated");
 	}
@@ -875,7 +881,7 @@ function getSubstacksToUse(directories, imageNameRaw) {
 		substackNames = substacksToUse(statusTable, 'Substack', 'Processed', 'QC');
 
 	}
-
+	
 	return substackNames;
 }
 

@@ -409,6 +409,8 @@ if(File.exists(imagesToUseFile) != 1) {
 
 //If we already have a table get out our existing status indicators
 imageName = getTableColumn(imagesToUseFile, "Image Name");
+autoQA = getTableColumn(imagesToUseFile, "Auto QA Passed");
+manualQA = getTableColumn(imagesToUseFile, "Manual QA Passed");
 
 //This is an array with the strings that come just before the information we want to retrieve from the ini file.
 iniTextStringsPre = newArray("x.pixel.sz = ", "y.pixel.sz = ", "z.spacing = ", "no.of.planes = ", "frames.per.plane = ");
@@ -422,139 +424,152 @@ iniValues =  getIniData(directories[3], iniTextStringsPre);
 //This is the main body of iterative thresholding, we open processed input images and use the coordinates of the cell locations previuosly 
 //input to determine cell locations and create cell masks
 for (currImage=0; currImage<imageName.length; currImage++) {
+
+	//If this image has passed automated or manual QA steps
+	if(autoQA[currImage] == 1 || manualQA[currImage] == 1) {
 	
-	print("QA'ing masks generated for image ",File.getNameWithoutExtension(imageName[currImage]));
-
-	print('Image number ', currImage, ' out of ', imageName.length);
-
-	imageNameRaw = File.getNameWithoutExtension(imageName[currImage]);
-
-	statusTable = directories[1]+imageNameRaw+"/Cell Coordinate Masks/Cell Position Marking.csv";
-
-	if(File.exists(statusTable) != 1) {
-		exit("Run cell detection first");
-	}
-
-	substackNames = substacksToUse(statusTable, 'Substack', 'Processed', 'QC');
-
-	for(currSubstack = 0; currSubstack < substackNames.length; currSubstack++) {
-
-		print("Processing substack ", substackNames[currSubstack]);
-
-        tcsStatusTable = directories[1]+imageNameRaw+"/TCS Status Substack(" + substackNames[currSubstack] +").csv";
-        
-        if(File.exists(tcsStatusTable) != 1) {
-            exit("Run mask generation first");
-        }
-
-		tcsValue = getTableColumn(tcsStatusTable, "TCS");
-		tcsMasksGenerated = getTableColumn(tcsStatusTable, "Masks Generated");
-		tcsQCChecked = getTableColumn(tcsStatusTable, "QC Checked");
-		tcsAnalysed = getTableColumn(tcsStatusTable, "Analysed");
-
-		for(TCSLoops=0; TCSLoops<tcsValue.length; TCSLoops++) {
-
-			if(tcsQCChecked[TCSLoops] == -1) {
-
-				print("QA'ing masks for TCS value of ", tcsValue[TCSLoops]);
-
-				//This is the directory for the current TCS
-				TCSDir=directories[1]+imageNameRaw+"/"+"TCS"+tcsValue[TCSLoops]+"/";
-				TCSMasks = TCSDir + "Cell Masks/";
-
-                cellMaskTable = TCSDir + "Substack (" + substackNames[currSubstack] + ") Mask Generation.csv";
-                
-                if(File.exists(cellMaskTable) != 1) {
-                    exit("Run mask generation first");
-                }
-
-				print("Retrieving mask generation status");
-
-				maskName = getTableColumn(cellMaskTable, "Mask Name");
-				maskTry = getTableColumn(cellMaskTable, "Mask Try");
-				maskSuccess = getTableColumn(cellMaskTable, "Mask Success");
-				maskQA = getTableColumn(cellMaskTable, "Mask QA");
-				maskQuant = getTableColumn(cellMaskTable, "Mask Quantified");
-
-				//We now loop through all the cells for this given input image
-				for(currCell=0; currCell<maskName.length; currCell++) {
-
-					substackCoordName = substring(maskName[currCell], indexOf(maskName[currCell], 'for'));
-					cellLRLoc = directories[1]+imageNameRaw+"/Local Regions/" + "Local region " + substackCoordName;
-
-                    if(maskSuccess[currCell] == 1 && maskQA[currCell] == -1) {
+		print("QA'ing masks generated for image ",File.getNameWithoutExtension(imageName[currImage]));
+	
+		print('Image number ', currImage, ' out of ', imageName.length);
+	
+		imageNameRaw = File.getNameWithoutExtension(imageName[currImage]);
+	
+		statusTable = directories[1]+imageNameRaw+"/Cell Coordinate Masks/Cell Position Marking.csv";
+	
+		if(File.exists(statusTable) != 1) {
 			
-                        print("QC for: ", maskName[currCell]);
-						print("Cell no.: ", currCell+1, " / ", maskName.length);
-
-						cellMaskLoc = TCSDir + "Cell Masks/" + maskName[currCell];
-						approved = getCellMaskApproval(cellMaskLoc, cellLRLoc);
-
-						if(approved == true) {
-							maskQA[currCell] = 1;
-						} else {
-							maskQA[currCell] = 0;
-						}
-						
-						somaName = directories[1]+imageNameRaw+"/Somas/Soma mask " + substackCoordName;
-
-						if(approved == true && File.exists(somaName) != 1) {
-
-							particles = generateCellSomaMask(cellMaskLoc, cellLRLoc);
-
-							keepSoma = false;
-
-							if(particles == 1) {
-								selectWindow("Mask of Soma Mask");
-								run("Create Selection");
-								run("Make Inverse");
-								getSelectionCoordinates(somaXpoints, somaYpoints);
-								selectWindow(File.getName(cellLRLoc));
-								makeSelection('freehand', somaXpoints, somaYpoints);
-								keepSoma = userApproval("Check image soma mask", "Soma check", "If the soma mask is acceptable, tick the checkbox \nto keep the soma mask");
-
-							}
-
-							if(keepSoma == false) {
-
-								waitForUser("Need to draw manual soma mask");
-								selectWindow(File.getName(cellLRLoc));
-								run("Select None");
-								for(i1=0; i1<3; i1++) {
-									run("In [+]");
+			print("Skipping this image as cell detection as not been run");
+			
+		} else {
+	
+			substackNames = substacksToUse(statusTable, 'Substack', 'Processed', 'QC');
+		
+			for(currSubstack = 0; currSubstack < substackNames.length; currSubstack++) {
+		
+				print("Processing substack ", substackNames[currSubstack]);
+		
+		        tcsStatusTable = directories[1]+imageNameRaw+"/TCS Status Substack(" + substackNames[currSubstack] +").csv";
+		        
+		        if(File.exists(tcsStatusTable) != 1) {
+		        	
+		            print("Skipping this image as mask generation has not been run");
+		            
+		        } else {
+		
+					tcsValue = getTableColumn(tcsStatusTable, "TCS");
+					tcsMasksGenerated = getTableColumn(tcsStatusTable, "Masks Generated");
+					tcsQCChecked = getTableColumn(tcsStatusTable, "QC Checked");
+					tcsAnalysed = getTableColumn(tcsStatusTable, "Analysed");
+			
+					for(TCSLoops=0; TCSLoops<tcsValue.length; TCSLoops++) {
+			
+						if(tcsQCChecked[TCSLoops] == -1) {
+			
+							print("QA'ing masks for TCS value of ", tcsValue[TCSLoops]);
+			
+							//This is the directory for the current TCS
+							TCSDir=directories[1]+imageNameRaw+"/"+"TCS"+tcsValue[TCSLoops]+"/";
+							TCSMasks = TCSDir + "Cell Masks/";
+			
+			                cellMaskTable = TCSDir + "Substack (" + substackNames[currSubstack] + ") Mask Generation.csv";
+			                
+			                if(File.exists(cellMaskTable) != 1) {
+			                	
+			                    print("Skipping this image as mask generation has not been run");
+			                    
+			                } else {
+			
+								print("Retrieving mask generation status");
+				
+								maskName = getTableColumn(cellMaskTable, "Mask Name");
+								maskTry = getTableColumn(cellMaskTable, "Mask Try");
+								maskSuccess = getTableColumn(cellMaskTable, "Mask Success");
+								maskQA = getTableColumn(cellMaskTable, "Mask QA");
+								maskQuant = getTableColumn(cellMaskTable, "Mask Quantified");
+				
+								//We now loop through all the cells for this given input image
+								for(currCell=0; currCell<maskName.length; currCell++) {
+				
+									substackCoordName = substring(maskName[currCell], indexOf(maskName[currCell], 'for'));
+									cellLRLoc = directories[1]+imageNameRaw+"/Local Regions/" + "Local region " + substackCoordName;
+				
+				                    if(maskSuccess[currCell] == 1 && maskQA[currCell] == -1) {
+							
+				                        print("QC for: ", maskName[currCell]);
+										print("Cell no.: ", currCell+1, " / ", maskName.length);
+				
+										cellMaskLoc = TCSDir + "Cell Masks/" + maskName[currCell];
+										approved = getCellMaskApproval(cellMaskLoc, cellLRLoc);
+				
+										if(approved == true) {
+											maskQA[currCell] = 1;
+										} else {
+											maskQA[currCell] = 0;
+										}
+										
+										somaName = directories[1]+imageNameRaw+"/Somas/Soma mask " + substackCoordName;
+				
+										if(approved == true && File.exists(somaName) != 1) {
+				
+											particles = generateCellSomaMask(cellMaskLoc, cellLRLoc);
+				
+											keepSoma = false;
+				
+											if(particles == 1) {
+												selectWindow("Mask of Soma Mask");
+												run("Create Selection");
+												run("Make Inverse");
+												getSelectionCoordinates(somaXpoints, somaYpoints);
+												selectWindow(File.getName(cellLRLoc));
+												makeSelection('freehand', somaXpoints, somaYpoints);
+												keepSoma = userApproval("Check image soma mask", "Soma check", "If the soma mask is acceptable, tick the checkbox \nto keep the soma mask");
+				
+											}
+				
+											if(keepSoma == false) {
+				
+												waitForUser("Need to draw manual soma mask");
+												selectWindow(File.getName(cellLRLoc));
+												run("Select None");
+												for(i1=0; i1<3; i1++) {
+													run("In [+]");
+												}
+												run("Scale to Fit");
+												setTool("polygon");
+												setBatchMode("Show");
+												waitForUser("Draw appropriate soma mask, click 'ok' when done");
+												getSelectionCoordinates(somaXpoints, somaYpoints);
+											}
+				
+											selectWindow(File.getName(cellLRLoc));
+											makeSelection('freehand', somaXpoints, somaYpoints);
+											run("Create Mask");
+											selectWindow("Mask");
+											rename(File.getName(somaName));
+											saveAs("tiff", somaName);
+				
+										} else if (File.exists(somaName) == 1) {
+											print('Soma mask ', File.getNameWithoutExtension(somaName), ' already exists');
+										} else if (approved != true) {
+											print('Cell mask ', maskName[currCell], ' rejected');
+										}
+				
+										close("*");
+				
+										saveMaskGenerationTable(maskName, maskTry, maskSuccess, maskQA, maskQuant, cellMaskTable);
+				
+									}
+				
 								}
-								run("Scale to Fit");
-								setTool("polygon");
-								setBatchMode("Show");
-								waitForUser("Draw appropriate soma mask, click 'ok' when done");
-								getSelectionCoordinates(somaXpoints, somaYpoints);
+				
+								tcsQCChecked[TCSLoops] = 1;
+				
+								saveTCSStatusTable(substackNames[currSubstack], tcsValue, tcsMasksGenerated, tcsQCChecked, tcsAnalysed, tcsStatusTable);
+				
 							}
-
-							selectWindow(File.getName(cellLRLoc));
-							makeSelection('freehand', somaXpoints, somaYpoints);
-							run("Create Mask");
-							selectWindow("Mask");
-							rename(File.getName(somaName));
-							saveAs("tiff", somaName);
-
-						} else if (File.exists(somaName) == 1) {
-							print('Soma mask ', File.getNameWithoutExtension(somaName), ' already exists');
-						} else if (approved != true) {
-							print('Cell mask ', maskName[currCell], ' rejected');
 						}
-
-						close("*");
-
-						saveMaskGenerationTable(maskName, maskTry, maskSuccess, maskQA, maskQuant, cellMaskTable);
-
 					}
-
 				}
-
-				tcsQCChecked[TCSLoops] = 1;
-
-				saveTCSStatusTable(substackNames[currSubstack], tcsValue, tcsMasksGenerated, tcsQCChecked, tcsAnalysed, tcsStatusTable);
-
 			}
 		}
 	}

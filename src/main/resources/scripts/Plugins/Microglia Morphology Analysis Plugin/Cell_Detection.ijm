@@ -236,6 +236,14 @@ function getOrCreateTableColumn(tableLoc, columnName, defaultValue, defaultLengt
 		Array.fill(outputArray, defaultValue);
 	}
 
+	//If it exists, make sure its the same length as default, if it's longer,
+	//add that length
+	if(File.exists(tableLoc) == 1 && outputArray.length < defaultLength) {
+		fillWithArray = newArray(defaultLength - outputArray.length);
+		Array.fill(fillWithArray, defaultValue);
+		outputArray = Array.concat(outputArray, fillWithArray);
+	}
+
 	return outputArray;
 }
 
@@ -352,7 +360,7 @@ function getMaximaCoordinates(imagePath, currMaskGenerationArray) {
 		
 	//Get the maxima of this image as cell locations
 	selectWindow("AVG");
-	run("Find Maxima...", "prominence=200 exclude output=List");
+	run("Find Maxima...", "prominence=100 exclude output=List");
 	selectWindow("Results");
 	xPoints = Table.getColumn('X');
 	yPoints = Table.getColumn('Y');
@@ -670,23 +678,13 @@ iniTextStringsPre = newArray("x.pixel.sz = ", "y.pixel.sz = ", "z.spacing = ", "
 iniValues =  getIniData(directories[3], iniTextStringsPre);
 //Index 0 is xPxlSz, then yPxlSz, zPxlSz, ZperT, FperZ
 
-//Point to the table where we store the status of our images in the processing pipeline
+//Point to the table where we store the sta1tus of our images in the processing pipeline
 maskGenerationStatusLoc = directories[1] +  "Mask Generation Status.csv";
 
 //If a file declaring the status of all our images re: mask generation exists, get the image names
 //else make the array based on inputs
-if(File.exists(maskGenerationStatusLoc) == 1) {
-
-	//Retrieve our existing columns
-	imageNameMasks = getTableColumn(maskGenerationStatusLoc, "Image Name");
-
-//If we don't have the file, we haven't run this yet
-} else {
-
-	//Set our arrays to their default values
-	imageNameMasks = imageName;
-
-}
+//Set our arrays to their default values
+imageNameMasks = imageName;
 
 //Retrieve the number of substacks to be made for each image, as well as the number we've already made - if the file doesn't
 //exist, set these defaults to -1 (not calculated) and 0

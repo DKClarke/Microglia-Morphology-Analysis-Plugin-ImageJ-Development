@@ -237,6 +237,12 @@ function substacksToUse(substackTableLoc, nameCol, processedCol, QCCol) {
 			}
 		}
 
+		//If none of the substacks are ready for analysis, return an array population with the string
+		//'nothing'
+		if(output[0] == 0) {
+			output = newArray('nothing');
+		}
+
 	} else {
 		exit("Substack names column in " + substackTableLoc + " not populated");
 	}
@@ -254,6 +260,14 @@ function getOrCreateTableColumn(tableLoc, columnName, defaultValue, defaultLengt
 		print("Table doesn't exist; creating array with default value of default length");
 		outputArray = newArray(defaultLength);
 		Array.fill(outputArray, defaultValue);
+	}
+
+	//If it exists, make sure its the same length as default, if it's longer,
+	//add that length
+	if(File.exists(tableLoc) == 1 && outputArray.length < defaultLength) {
+		fillWithArray = newArray(defaultLength - outputArray.length);
+		Array.fill(fillWithArray, defaultValue);
+		outputArray = Array.concat(outputArray, fillWithArray);
 	}
 
 	return outputArray;
@@ -867,7 +881,7 @@ function getSubstacksToUse(directories, imageNameRaw) {
 		substackNames = substacksToUse(statusTable, 'Substack', 'Processed', 'QC');
 
 	}
-
+	
 	return substackNames;
 }
 

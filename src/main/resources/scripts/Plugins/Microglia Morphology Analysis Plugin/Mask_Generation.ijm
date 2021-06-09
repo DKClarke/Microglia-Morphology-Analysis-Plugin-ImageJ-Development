@@ -887,15 +887,9 @@ function getSubstacksToUse(directories, imageNameRaw) {
 
 function populateTCSValueArray(tcsValue, numberOfLoops, selection) {
 
-	//If we haven't populated our TCS value array with TCS values yet
-	if(tcsValue[0] == -1) {
-
-		print("Not previously attempted mask generation for this substack");
-
-		//Populate our array with TCS values
-		for(TCSLoops=0; TCSLoops<numberOfLoops; TCSLoops++) {
-			tcsValue[TCSLoops] = selection[0]+(selection[3]*TCSLoops);
-		}
+	//Populate our array with TCS values
+	for(TCSLoops=0; TCSLoops<numberOfLoops; TCSLoops++) {
+		tcsValue[TCSLoops] = selection[0]+(selection[3]*TCSLoops);
 	}
 
 	return tcsValue;
@@ -987,6 +981,135 @@ function iterativeThresholding(nextIteration, initialThreshold, firstArea, tcsVa
 
 }
 
+function createTCSArrays(numberOfLoops, selection) {
+
+	//Populate an array with all the TCS values we want to create masks for
+	tcsValueRaw = populateTCSValueArray(newArray(numberOfLoops), numberOfLoops, selection);
+
+	//Create the other arrays we need to store info about these with
+	tcsMasksGeneratedRaw = newArray(numberOfLoops);
+	tcsQCCheckedRaw = newArray(numberOfLoops);
+	tcsAnalysedRaw = newArray(numberOfLoops);
+
+	tcsMasksGenerated = Array.fill(tcsMasksGeneratedRaw, -1);
+	tcsQCChecked = Array.fill(tcsQCCheckedRaw, -1);
+	tcsAnalysed = Array.fill(tcsAnalysedRaw, -1);
+
+	
+	//Return them as one big array
+	return Array.concat(tcsValueRaw, tcsMasksGenerated, tcsQCChecked, tcsAnalysed);
+
+}
+
+function fillTCSArraysWithExisting(tcsStatusTable, numberOfLoops, tcsArrays) {
+
+	//Get our old TCS arrays and info if they exist
+	tcsValueOld = getOrCreateTableColumn(tcsStatusTable, "TCS", -1, numberOfLoops);
+	tcsMasksGeneratedOld = getOrCreateTableColumn(tcsStatusTable, "Masks Generated", -1, numberOfLoops);
+	tcsQCCheckedOld = getOrCreateTableColumn(tcsStatusTable, "QC Checked", -1, numberOfLoops);
+	tcsAnalysedOld = getOrCreateTableColumn(tcsStatusTable, "Analysed", -1, numberOfLoops);
+
+	//Slice up our new arrays into the corresponding parts
+	tcsValueNew = Array.slice(tcsArrays, 0, numberOfLoops);
+	tcsMasksGeneratedNew = Array.slice(tcsArrays, numberOfLoops, numberOfLoops*2);
+	tcsQCCheckedNew = Array.slice(tcsArrays, (numberOfLoops*2), numberOfLoops*3);
+	tcsAnalysedNew = Array.slice(tcsArrays, (numberOfLoops*3), numberOfLoops*4);
+
+	//If we find a matching TCS value in the old, populate the values in the new
+	//with them
+	for(oldTCS = 0; oldTCS < tcsValueOld.length; oldTCS++) {
+		for(newTCS = 0; newTCS < tcsValueNew.length; newTCS++) {
+			if(tcsValueOld[oldTCS] == tcsValueNew[newTCS]) {
+				tcsMasksGeneratedNew[newTCS] = tcsMasksGeneratedOld[oldTCS];
+				tcsQCCheckedNew[newTCS] = tcsQCCheckedOld[oldTCS];
+				tcsAnalysedNew[newTCS] = tcsAnalysedOld[oldTCS];
+			}
+		}
+	}
+	
+	//Return these filled arrays as one big array
+	return Array.concat(tcsValueNew, tcsMasksGeneratedNew, tcsQCCheckedNew, tcsAnalysedNew);
+
+}
+
+function identifyMissingTCSIndices(tcsValueOld, tcsValueNew) {
+
+	//For each old TCS
+	nonMatchCount = 0;
+	nonMatching = newArray(1);
+	nonMatching[0] = -1;
+	for(oldTCS = 0; oldTCS < tcsValueOld.length; oldTCS++) {
+		match = false;
+
+		//Check if it is found in the new tcs values
+		for(newTCS = 0; newTCS < tcsValueNew.length; newTCS++) {
+			if(tcsValueOld[oldTCS] == tcsValueNew[newTCS]) {
+				match = true;
+			}
+		}
+
+		//If not, store its index in an array
+		if(match == false && tcsValueOld[oldTCS] != -1) {
+			if(nonMatchCount == 0) {
+				nonMatching = newArray(1);
+				nonMatching[0] = oldTCS;
+			} else {
+				nonMatching = Array.concat(nonMatching, oldTCS);
+			}
+			nonMatchCount++;
+		}
+	}
+
+	//Return this array
+	return nonMatching;
+
+}
+
+function fillWithMissingTCSValues(nonMatchingIndices, tcsStatusTable, tcsArrays, numberOfLoops) {
+
+	//Get all our old TCS info
+	tcsValueOld = getOrCreateTableColumn(tcsStatusTable, "TCS", -1, numberOfLoops);
+	tcsMasksGeneratedOld = getOrCreateTableColumn(tcsStatusTable, "Masks Generated", -1, numberOfLoops);
+	tcsQCCheckedOld = getOrCreateTableColumn(tcsStatusTable, "QC Checked", -1, numberOfLoops);
+	tcsAnalysedOld = getOrCreateTableColumn(tcsStatusTable, "Analysed", -1, numberOfLoops);
+
+	//Cut up our new TCS info (filled in with matching old)
+	tcsValueNew = Array.slice(tcsArrays, 0, numberOfLoops);
+	tcsMasksGeneratedNew = Array.slice(tcsArrays, numberOfLoops, numberOfLoops*2);
+	tcsQCCheckedNew = Array.slice(tcsArrays, (numberOfLoops*2), numberOfLoops*3);
+	tcsAnalysedNew = Array.slice(tcsArrays, (numberOfLoops*3), numberOfLoops*4);
+
+	//Create some new arrays we will use to store the non matching old
+	tcsValAdd = newArray(nonMatchingIndices.length);
+	tcsMasksGeneratedAdd = newArray(nonMatchingIndices.length);
+	tcsQCCheckedAdd = newArray(nonMatchingIndices.length);
+	tcsAnalysedAdd = newArray(nonMatchingIndices.length);
+
+	//For each non matching old, fill the arrays with the info
+	for(nonMatch = 0; nonMatch < nonMatchingIndices.length; nonMatch++) {
+		index = nonMatchingIndices[nonMatch];
+		tcsValAdd[nonMatch] = tcsValueOld[index];
+		tcsMasksGeneratedAdd[nonMatch] = tcsMasksGeneratedOld[index];
+		tcsQCCheckedAdd[nonMatch] = tcsQCCheckedOld[index];
+		tcsAnalysedAdd[nonMatch] = tcsAnalysedOld[index];
+	}
+
+	//Concat these non matching arrays with the new TCS arrays so we have records of all old TCS
+	//whether they're included in the new or not
+	tcsValue = Array.concat(tcsValueNew, tcsValAdd);
+	tcsMasksGenerated = Array.concat(tcsMasksGeneratedNew, tcsMasksGeneratedAdd);
+	tcsQCChecked = Array.concat(tcsQCCheckedNew, tcsQCCheckedAdd);
+	tcsAnalysed = Array.concat(tcsAnalysedNew, tcsAnalysedAdd);
+	
+	//Format the length of our arrays as something we can pass in a concatenated array
+	toPassArray = newArray('0');
+	toPass = tcsValueNew.length;
+	toPassArray[0] = toPass;
+
+	//Return the length of these new arrays, and then these new arrays
+	return Array.concat(toPassArray, tcsValue, tcsMasksGenerated, tcsQCChecked, tcsAnalysed);
+
+}
 
 setBatchMode(true);
 
@@ -1046,15 +1169,46 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 		for(currSubstack = 0; currSubstack < substackNames.length; currSubstack++) {
 	
 			print("Processing substack ", substackNames[currSubstack]);
-	
+
+			//Get the TCS arrays we need to create masks for and their info
+			tcsArrays = createTCSArrays(numberOfLoops, selection);
+
+			//Fill them with info from old processed TCS values if they exist
 			tcsStatusTable = directories[1]+imageNameRaw+"/TCS Status Substack(" + substackNames[currSubstack] +").csv";
-	
-			tcsValue = getOrCreateTableColumn(tcsStatusTable, "TCS", -1, numberOfLoops);
-			tcsMasksGenerated = getOrCreateTableColumn(tcsStatusTable, "Masks Generated", -1, numberOfLoops);
-			tcsQCChecked = getOrCreateTableColumn(tcsStatusTable, "QC Checked", -1, numberOfLoops);
-			tcsAnalysed = getOrCreateTableColumn(tcsStatusTable, "Analysed", -1, numberOfLoops);
-	
-			tcsValue = populateTCSValueArray(tcsValue, numberOfLoops, selection);
+			tcsArraysWithExisting = fillTCSArraysWithExisting(tcsStatusTable, numberOfLoops, tcsArrays);
+
+			//Get the TCS values of old, and our new TCS values
+			tcsValueOld = getOrCreateTableColumn(tcsStatusTable, "TCS", -1, numberOfLoops);
+			tcsValueNew = Array.slice(tcsArrays, 0, numberOfLoops);
+			
+			//Get the array indices of old TCS values that aren't present in the new
+			nonMatchingIndices = identifyMissingTCSIndices(tcsValueOld, tcsValueNew);
+
+			//If there are actually old TCS values that aren't in the new one
+			if(nonMatchingIndices[0] != -1) {
+
+				//Get a big array of all our old and new tcs info stuck together
+				nearlyDone = fillWithMissingTCSValues(nonMatchingIndices, tcsStatusTable, tcsArraysWithExisting, numberOfLoops);
+
+				//Find out how long each one is meant to be and what to cut
+				sliceBy = nearlyDone[0];
+				sliceInto = cutUp;
+			
+			//Else
+			} else {
+
+				//What we're cutting up is our new with old filled in
+				sliceBy = numberOfLoops;
+				sliceInto = tcsArraysWithExisting;
+
+			}
+
+			//Cut up either our new w/ old filled in and missing stacked
+			//Or, our new w/ old filled in
+			tcsValue = Array.slice(sliceInto, 0, sliceBy);
+			tcsMasksGenerated = Array.slice(sliceInto, sliceBy, sliceBy*2);
+			tcsQCChecked = Array.slice(sliceInto, (sliceBy*2), sliceBy*3);
+			tcsAnalysed = Array.slice(sliceInto, (sliceBy*3), sliceBy*4);
 	
 			//Loop through each TCS value the user has specified
 			for(TCSLoops=0; TCSLoops<tcsValue.length; TCSLoops++) {
@@ -1062,7 +1216,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 				//If we haven't generated all the masks for the current TCS value
 				if(tcsMasksGenerated[TCSLoops] == -1) {
 	
-					print("Processing TCS value of ", tcsValue[TCSLoops]);
+					print("Processing TCS value of ", tcsValue[TCSLoops]);				
 	
 					//This is the directory for the current TCS
 					TCSDir=directories[1]+imageNameRaw+"/"+"TCS"+tcsValue[TCSLoops]+"/";

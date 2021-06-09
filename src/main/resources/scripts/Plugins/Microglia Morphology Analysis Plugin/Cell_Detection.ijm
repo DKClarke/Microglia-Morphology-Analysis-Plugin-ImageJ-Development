@@ -653,9 +653,9 @@ storageFolders=newArray("Cell Coordinates/", "Cell Coordinate Masks/",
 directories = getWorkingAndStorageDirectories();
 //[0] is input, [1] is output, [2] is done (working directories) [3] is directoryName (storage directory)
 
-//Ask the user what size buffer in um to use to seperate substacks; defaults to 10					
+//Ask the user what size buffer in um to use to separate substacks; defaults to 10					
 Dialog.create('Buffer Size');
-Dialog.addNumber('What size buffer in um to use to seperate substacks?', 10);
+Dialog.addNumber('What size buffer in um to use to separate substacks?', 10);
 Dialog.show();
 zBuffer = Dialog.getNumber();
 

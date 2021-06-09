@@ -887,13 +887,10 @@ function getSubstacksToUse(directories, imageNameRaw) {
 
 function populateTCSValueArray(tcsValue, numberOfLoops, selection) {
 
-	//If we haven't populated our TCS value array with TCS values yet
-	if(tcsValue[0] == -1) {
-
-		print("Not previously attempted mask generation for this substack");
-
-		//Populate our array with TCS values
-		for(TCSLoops=0; TCSLoops<numberOfLoops; TCSLoops++) {
+	//Populate our array with TCS values
+	for(TCSLoops=0; TCSLoops<numberOfLoops; TCSLoops++) {
+		if(tcsValue[TCSLoops] == -1) {
+			print("Not previously attempted mask generation for this substack");
 			tcsValue[TCSLoops] = selection[0]+(selection[3]*TCSLoops);
 		}
 	}

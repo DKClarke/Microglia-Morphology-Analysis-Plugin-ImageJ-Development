@@ -1216,13 +1216,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 				//If we haven't generated all the masks for the current TCS value
 				if(tcsMasksGenerated[TCSLoops] == -1) {
 	
-					print("Processing TCS value of ", tcsValue[TCSLoops]);
-					print(TCSLoops);
-					print(tcsMasksGenerated[TCSLoops]);
-					print(tcsQCChecked[TCSLoops]);					
-
-					Array.show("title", tcsValue, tcsMasksGenerated, tcsQCChecked, tcsAnalysed);
-					waitForUser('');
+					print("Processing TCS value of ", tcsValue[TCSLoops]);				
 	
 					//This is the directory for the current TCS
 					TCSDir=directories[1]+imageNameRaw+"/"+"TCS"+tcsValue[TCSLoops]+"/";

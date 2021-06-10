@@ -1189,7 +1189,7 @@ function removeExtraSpace(finalStack, renameAs) {
 
 	}
 		
-	
+	setThreshold(1,255);
 	run("Create Selection");
 	run("To Bounding Box");
 	

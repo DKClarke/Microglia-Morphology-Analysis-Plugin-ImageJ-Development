@@ -289,6 +289,7 @@ function getSkeletonMeasurements(cellMaskLoc, skelNames) {
 		storeValues[currMeasure] = getResult(skelNames[currMeasure], 0);
 		} else {
 			selectWindow("For Skeleton");
+			setThreshold(1,255);
 			run("Create Selection");
 			getStatistics(area);
 			storeValues[currMeasure] = area;
@@ -348,6 +349,7 @@ function getSimpleMeasurements(cellMaskLoc,simpleValues) {
 
 	//Select our non skeletonised image, get its perim, circul, AR, and area
 	selectWindow(File.getName(cellMaskLoc));
+	setThreshold(1,255);
 	run("Create Selection");
 	List.setMeasurements;
 
@@ -369,6 +371,7 @@ function getExtremaCoordinates(cellMaskLoc) {
 
 	//Get the coordinates that define our mask
 	selectWindow(File.getName(cellMaskLoc));
+	setThreshold(1,255);
 	run("Create Selection");
 	getSelectionCoordinates(xpoints, ypoints);
 	run("Select None");
@@ -453,6 +456,7 @@ function getSomaArea(somaName) {
 	//Open our soma mask and get it's area
 
 	open(somaName);
+	setThreshold(1,255);
 	run("Create Selection");
 	List.setMeasurements;
 	somaArea = List.getValue("Area");

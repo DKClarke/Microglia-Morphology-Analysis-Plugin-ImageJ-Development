@@ -490,6 +490,7 @@ function findMaximaInCoords() {
 	//For our connected mask image, get the selection that defines it
 	print("Finding the local maxima in our Connected image");
 	selectWindow("Connected");
+    setThreshold(1, 255);
 	run("Create Selection");
 	getSelectionCoordinates(xpoints, ypoints);
 
@@ -537,6 +538,7 @@ function getCurrentMaskArea(xCoord, yCoord, threshold) {
 	getConnectedMask(xCoord, yCoord, threshold);
 
 	selectWindow("Connected");
+    setThreshold(1, 255);
 	run("Create Selection");
 	getStatistics(area);
 
@@ -583,6 +585,7 @@ function tooCloseToEdge(imageName, bufferSize) {
 	//For our image, get a selection that defines it
 	print("Calculating if our selection is too close to the edge of our image");
 	selectWindow(imageName);
+    setThreshold(1, 255);
 	run("Create Selection");
 	getSelectionCoordinates(xCoords, yCoords);
 	Array.getStatistics(xCoords, xMin, xMax, mean, stdDev);
@@ -1283,7 +1286,6 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 							avgProjImageLoc = directories[1]+imageNameRaw+"/Cell Coordinate Masks/CP mask for " + substackFileSuffix + ".tif";
 							openAndCalibrateImage(avgProjImageLoc, iniValues);
 							proceed = coordinatesWithinBuffer(avgProjImageLoc, xCoords[currCell], yCoords[currCell], fiveMicronsInPixels);	
-	
 							//If the y coordinate isn't less than 5 microns from the bottom or top edges of the image, and the x coordinate isn't less than 5 pixels from the width, then we
 							//proceed
 	
@@ -1312,7 +1314,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 								
 								initialThreshold = lrCoordinateValues[2];
 								topValue = lrCoordinateValues[3];
-	
+								
 								//Here we are finding the same connected regions using the maxima as our point selection and then measuring the area
 								//of the connected region to get an initial area size associated with the starting otsu value
 								firstArea = getCurrentMaskArea(lrCoordinateValues[0], lrCoordinateValues[1], initialThreshold);
@@ -1368,6 +1370,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 							maskSuccess[currCell] = 0;
 							saveMaskGenerationTable(maskName, maskTry, maskSuccess, maskQA, cellMaskTable);
 						}
+
 					}
 	
 					tcsMasksGenerated[TCSLoops] = 1;

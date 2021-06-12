@@ -728,7 +728,7 @@ function blurDetector(zPlaneWindow){
 	imageSlices = nSlices;
 
 	//For each slice in the stack, store the maximum pixel value of the laplacian filtered slice
-	maxArray = getSliceStatistics(zPlaneWindow, "max");
+	varArray = getSliceStatistics(zPlaneWindow, "std");
 
 	//Close the laplacian filtered image
 	selectWindow(zPlaneWindow);
@@ -739,7 +739,7 @@ function blurDetector(zPlaneWindow){
 	rename(zPlaneWindow);
 
 	//Return the max grey values of each slice of our laplacian filtered image
-	return maxArray;
+	return varArray;
 
 }
 
@@ -845,7 +845,7 @@ function registerToReferenceFrame(referenceFrame, zFramesWindow){
 //grey value
 function getSliceStatistics(imageName, value) {
 
-	if(value != "mean" && value != "max") {
+	if(value != "mean" && value != "max" && value != "std") {
 		exit("getSliceStatistics() function input for value was not correctly formatted");
 	}
 

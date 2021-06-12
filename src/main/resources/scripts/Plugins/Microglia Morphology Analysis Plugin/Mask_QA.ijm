@@ -351,6 +351,7 @@ function generateCellSomaMask(cellMaskLoc, cellLRLoc) {
 	makeSelection('freehand', xpoints, ypoints);
 	run("Clear Outside");
 	run("Select None");
+
 	run("Auto Threshold", "method=Intermodes  white");
 	logString = getInfo("log");
 	intermodesIndex = lastIndexOf(logString, "Intermodes");
@@ -373,12 +374,11 @@ function generateCellSomaMask(cellMaskLoc, cellLRLoc) {
 	for(i1=0; i1<2; i1++) {
 		run("Dilate");
 	}
-	
-	run("Invert");
 
 	//Here we check how many particles have been left after this process
 	run("Auto Threshold", "method=Default");
 	run("Clear Results");
+	run("Set Measurements...", "area decimal=9");
 	run("Analyze Particles...", "size=30-Infinity circularity=0.60-1.00 show=Masks display clear");
 	getStatistics(area, mean, min, max, std, histogram);
 
@@ -394,6 +394,28 @@ function generateCellSomaMask(cellMaskLoc, cellLRLoc) {
 
 	return adjustedN;
 
+}
+
+function getOrCreateTableColumn(tableLoc, columnName, defaultValue, defaultLength) {
+
+	//If our table exists, get our column
+	if(File.exists(tableLoc) == 1) {
+		outputArray = getTableColumn(tableLoc, columnName);
+	} else {
+		print("Table doesn't exist; creating array with default value of default length");
+		outputArray = newArray(defaultLength);
+		Array.fill(outputArray, defaultValue);
+	}
+
+	//If it exists, make sure its the same length as default, if it's longer,
+	//add that length
+	if(File.exists(tableLoc) == 1 && outputArray.length < defaultLength) {
+		fillWithArray = newArray(defaultLength - outputArray.length);
+		Array.fill(fillWithArray, defaultValue);
+		outputArray = Array.concat(outputArray, fillWithArray);
+	}
+
+	return outputArray;
 }
 
 setBatchMode(true);
@@ -464,6 +486,14 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 					tcsAnalysed = getTableColumn(tcsStatusTable, "Analysed");
 			
 					for(TCSLoops=0; TCSLoops<tcsValue.length; TCSLoops++) {
+
+						//If we're after our first TCS loop
+						if(TCSLoops > 0) {
+							print("Masks generated for previous TCS value");
+							prevTCSDir = directories[1]+imageNameRaw+"/"+"TCS"+tcsValue[TCSLoops-1]+"/";
+						} else {
+							prevTCSDir = 'none';
+						}
 			
 						if(tcsQCChecked[TCSLoops] == -1) {
 			
@@ -488,14 +518,20 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 								maskSuccess = getTableColumn(cellMaskTable, "Mask Success");
 								maskQA = getTableColumn(cellMaskTable, "Mask QA");
 								maskQuant = getTableColumn(cellMaskTable, "Mask Quantified");
+
+								//Get previous mask success statuses as if they failed at a lower TCS, they will fail at a higher value so
+								//no point attempting them
+								prevTCSCellMaskTable = prevTCSDir + "Substack (" + substackNames[currSubstack] + ") Mask Generation.csv";
+								prevMaskQA = getOrCreateTableColumn(prevTCSCellMaskTable, "Mask QA", 1, maskName.length);
 				
 								//We now loop through all the cells for this given input image
 								for(currCell=0; currCell<maskName.length; currCell++) {
 				
 									substackCoordName = substring(maskName[currCell], indexOf(maskName[currCell], 'for'));
 									cellLRLoc = directories[1]+imageNameRaw+"/Local Regions/" + "Local region " + substackCoordName;
-				
-				                    if(maskSuccess[currCell] == 1 && maskQA[currCell] == -1) {
+									
+									//If we successfully made this mask and it's previous mask size QA was passed successfully
+				                    if(maskSuccess[currCell] == 1 && maskQA[currCell] == -1 && prevMaskQA[currCell] == 1) {
 							
 				                        print("QC for: ", maskName[currCell]);
 										print("Cell no.: ", currCell+1, " / ", maskName.length);

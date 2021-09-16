@@ -340,11 +340,11 @@ function coordinatesWithinBuffer(imageLocation, currXCoord, currYCoord, bufferIn
 	getDimensions(originalWidth, originalHeight, originalChannels, originalSlices, originalFrames);
 	
 	//Calculate if our y or x coordinates are more than bufferInPixels pixels away from the edges of the image
-	yInsideBuffer = (currYCoord > bufferInPixels) || (currYCoord < (originalHeight - bufferInPixels));
-	xInsideBuffer = (currXCoord > bufferInPixels) || (currXCoord < (originalWidth - bufferInPixels));
+	yInsideBuffer = (currYCoord > bufferInPixels) && (currYCoord < (originalHeight - bufferInPixels));
+	xInsideBuffer = (currXCoord > bufferInPixels) && (currXCoord < (originalWidth - bufferInPixels));
 
 	//Return if both coordinates are inside our buffered area
-	return yInsideBuffer && xInsideBuffer;
+	return (yInsideBuffer && xInsideBuffer);
 
 }
 
@@ -357,8 +357,6 @@ function getLRCoords(imageLoc, cellLocCoords, LRLengthPixels) {
 	//Get our image dimensions
 	selectWindow(File.getName(imageLoc));
 	getDimensions(LRWidth, LRHeight, LRChannels, LRSlices, LRFrames);
-
-	
 
 	//For each of our cell coordinates
 	for(currCoord = 0; currCoord < cellLocCoords.length; currCoord++) {
@@ -379,11 +377,14 @@ function getLRCoords(imageLoc, cellLocCoords, LRLengthPixels) {
 		LRCoords[0] = LRWidth - LRLengthPixels;
 	}
 
+	//Can't be too close to the top since it's the top left...
+	/*
 	//If the coordinate is too close to the top of the image for us to draw a full LR
 	if((LRHeight - cellLocCoords[1]) < LRLengthPixels/2) {
 		//Set the LR coordinate to be at least one LR length away from the top
 		LRCoords[1] = LRHeight - LRLengthPixels;
 	}
+	*/
 
 	//If our coordinates end up being outside our image (i.e. the image isnt big enough to create a
 	//local region of our specified size) set them to 0
@@ -588,8 +589,8 @@ function tooCloseToEdge(imageName, bufferSize) {
     setThreshold(1, 255);
 	run("Create Selection");
 	getSelectionCoordinates(xCoords, yCoords);
-	Array.getStatistics(xCoords, xMin, xMax, mean, stdDev);
-	Array.getStatistics(yCoords, yMin, yMax, mean, stdDev) ;
+	Array.getStatistics(xCoords, xMin, xMax, xMean, stdDev);
+	Array.getStatistics(yCoords, yMin, yMax, yMean, stdDev) ;
 
 	//For our rightmost point, we already have our definixing X value (xMax) but we need to find the y value
 	//at the xMax coordinate, so get the mean of any matching y points
@@ -612,15 +613,25 @@ function tooCloseToEdge(imageName, bufferSize) {
 	//[0] and [1] are highest x with y (rightmost), [2] and [3] are lowest x with y (leftmost), 
 	//[4] and [5] are x and highest y (bottommost) [6] and [7] are x with lowest y (topmost)
 
+	print(xPoints[0], yPoints[0]);
+	print(xPoints[1], yPoints[1]);
+	print(xPoints[2], yPoints[2]);
+	print(xPoints[3], yPoints[3]);
+
+	print(imageName);
+
 	//For our 4 extrema, find out if they're within the buffer of our image
 	inBufferResults = newArray(xPoints.length);
 	for(currPoint = 0; currPoint < 4; currPoint++) {
 		inBufferResults[currPoint] = coordinatesWithinBuffer(imageName, xPoints[currPoint], yPoints[currPoint], bufferSize);
+		print(inBufferResults[currPoint]);
 	}
 
 	//If the mean of our results is 1 then all our results were true and we return false since we're not
 	//too close to the edge, else we return true
 	Array.getStatistics(inBufferResults, min, max, mean, stdDev);
+
+	print(mean);
 
 	if(mean == 1) {
 		return false;
@@ -1261,7 +1272,10 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 					//no point attempting them
 					prevTCSCellMaskTable = prevTCSDir + "Substack (" + substackNames[currSubstack] + ") Mask Generation.csv";
 					prevMaskSuccess = getOrCreateTableColumn(prevTCSCellMaskTable, "Mask Success", 1, xCoords.length);
-	
+
+					//This is here for debugging
+					saved = 0;
+					
 					//We now loop through all the cells for this substack and TCS value
 					for(currCell=0; currCell<xCoords.length; currCell++) {
 	
@@ -1301,8 +1315,14 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 								print("Coordinate number " + (currCell+1) + "/" + xCoords.length);
 	
 								lrImageName = "Local region for " + rawCellName;
+
+								print('lrImageName: ' + lrImageName);
 	
 								lrSaveLoc = directories[1] + imageNameRaw + "/" + "Local Regions/" + lrImageName;
+
+								print('lrSaveLoc: ' + lrSaveLoc);
+
+								print('avgProjImageLoc: ' + avgProjImageLoc);
 	
 								LRCoords = getLRCoords(avgProjImageLoc, newArray(xCoords[currCell], yCoords[currCell]), LRLengthPixels);
 	
@@ -1335,13 +1355,43 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 								nextIteration = getMaskStatus(firstArea, tcsValue[TCSLoops], selection[2], touching, stabilised);
 								
 								nextIteration = iterativeThresholding(nextIteration, initialThreshold, firstArea, tcsValue, TCSLoops, topValue, lrCoordinateValues);
-	
+
 								//If the mask has passed, save it
 								if(nextIteration == 0) {
 									print("Mask successfully generated; saving");
+
+									if(saved > 0) {
+										prevSaveLoc = maskSaveLoc;
+									}
+									
 									maskSaveLoc = TCSMasks + maskName[currCell];
+
+									if(saved > 0) {
+										open(prevSaveLoc);
+										print(TCSMasks + maskName[currCell-1]);
+										prevImageName = getTitle();
+										print(prevSaveLoc);
+										imageCalculator("Subtract create", "Connected", prevImageName);
+										selectWindow("Result of Connected");
+										getRawStatistics(subnPixels, submean, submin, submax, substd, subhistogram);
+										print('Max diff: ' + submax);
+										
+										if(submax == 0) {
+											print('Issue with this one');
+											setBatchMode("exit and display");
+											waitForUser('check');
+										}
+	
+										selectWindow("Result of Connected");
+										run('Close');
+										selectWindow(prevImageName);
+										run('Close');
+	
+									}
+									
 									saveImage("Connected", maskSaveLoc);
 									maskSuccess[currCell] = 1;
+									saved +=1;
 								}
 								
 								selectWindow("Connected");	
@@ -1368,7 +1418,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 						} else if (prevMaskSuccess[currCell]==0) {
 							maskTry[currCell] = 1;
 							maskSuccess[currCell] = 0;
-							saveMaskGenerationTable(maskName, maskTry, maskSuccess, maskQA, cellMaskTable);
+							saveMaskGenerationTable(maskName, maskTry, maskSuccess, maskQA, maskQuant, cellMaskTable);
 						}
 
 					}

@@ -340,7 +340,7 @@ function generateCellSomaMask(cellMaskLoc, cellLRLoc) {
 	//Create a selection from the mask
 	setThreshold(1,255);
 	run("Create Selection");
-	getSelectionCoordinates(xpoints, ypoints);
+ 	roiManager("Add");
 
 	//Apply some image functions to the cell from the LR image to generate a soma mask
 	selectWindow(File.getName(cellLRLoc));
@@ -348,7 +348,7 @@ function generateCellSomaMask(cellMaskLoc, cellLRLoc) {
 	run("Duplicate...", " ");
 	rename("Soma Mask");
 	selectWindow("Soma Mask");
-	makeSelection('freehand', xpoints, ypoints);
+	RoiManager.select(0)
 	run("Clear Outside");
 	run("Select None");
 
@@ -363,23 +363,19 @@ function generateCellSomaMask(cellMaskLoc, cellLRLoc) {
 		selectWindow("Log");
 		run("Close");
 	}
-	
-	run("Open");
-	run("Watershed");
 
-	for(i1=0; i1<3; i1++) {
-		run("Erode");
-	}
+	RoiManager.select(0)
+	run("Dilate");
+	run("Erode");
+	run("Clear Outside");
+	run("Select None");
 
-	for(i1=0; i1<2; i1++) {
-		run("Dilate");
-	}
+	roiManager("reset");
 
-	//Here we check how many particles have been left after this process
-	run("Auto Threshold", "method=Default");
 	run("Clear Results");
 	run("Set Measurements...", "area decimal=9");
-	run("Analyze Particles...", "size=30-Infinity circularity=0.60-1.00 show=Masks display clear");
+	setThreshold(1,255);
+	run("Analyze Particles...", "size=25-Infinity circularity=0.60-1.00 show=Masks display clear");
 	getStatistics(area, mean, min, max, std, histogram);
 
 	if(nResults > 0) {
@@ -555,18 +551,22 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 				
 											if(particles == 1) {
 												selectWindow("Mask of Soma Mask");
-												setThreshold(1,255);
+												if(is("Inverting LUT") == true) {
+													run("Invert LUT");
+												}
+
 												run("Create Selection");
 												run("Make Inverse");
-												getSelectionCoordinates(somaXpoints, somaYpoints);
+ 												roiManager("Add");
 												selectWindow(File.getName(cellLRLoc));
-												makeSelection('freehand', somaXpoints, somaYpoints);
+												RoiManager.select(0)
 												keepSoma = userApproval("Check image soma mask", "Soma check", "If the soma mask is acceptable, tick the checkbox \nto keep the soma mask");
 				
 											}
 				
 											if(keepSoma == false) {
-				
+
+												roiManager("reset");
 												waitForUser("Need to draw manual soma mask");
 												selectWindow(File.getName(cellLRLoc));
 												run("Select None");
@@ -577,15 +577,19 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 												setTool("polygon");
 												setBatchMode("Show");
 												waitForUser("Draw appropriate soma mask, click 'ok' when done");
-												getSelectionCoordinates(somaXpoints, somaYpoints);
+												roiManager("Add");
+												//getSelectionCoordinates(somaXpoints, somaYpoints);
 											}
 				
 											selectWindow(File.getName(cellLRLoc));
-											makeSelection('freehand', somaXpoints, somaYpoints);
+											RoiManager.select(0)
+											run("Clear Outside");
 											run("Create Mask");
 											selectWindow("Mask");
+											setBatchMode(true);
 											rename(File.getName(somaName));
 											saveAs("tiff", somaName);
+											roiManager("reset");
 				
 										} else if (File.exists(somaName) == 1) {
 											print('Soma mask ', File.getNameWithoutExtension(somaName), ' already exists');

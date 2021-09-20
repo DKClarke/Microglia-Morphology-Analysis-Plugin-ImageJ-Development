@@ -519,14 +519,14 @@ function findMaximaInCoords() {
 
 }
 
-function saveImage(Image, saveLoc) {
-
+function saveImage(image, saveLoc) {
+	
 	//Now that we're certain we've got the optimal coordinates, we save our LR image
-	selectWindow(Image);
+	selectWindow(image);
 	run("Select None");
 	saveAs("tiff", saveLoc);
 	selectWindow(File.getName(saveLoc));
-	rename(Image);
+	rename(image);
 
 }
 

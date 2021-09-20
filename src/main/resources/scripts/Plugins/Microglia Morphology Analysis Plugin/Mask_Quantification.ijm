@@ -260,10 +260,10 @@ function makeDirectories(directories) {
     }
 }
 
-function saveAndCloseImage(Image, saveLoc) {
+function saveAndCloseImage(image, saveLoc) {
 	
 	//Save our image and close it
-	selectWindow(Image);
+	selectWindow(image);
 	saveAs("tiff", saveLoc);
 	selectWindow(File.getName(saveLoc));
 	run("Close");

@@ -1360,12 +1360,13 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 								if(nextIteration == 0) {
 									print("Mask successfully generated; saving");
 
-									if(saved > 0) {
-										prevSaveLoc = maskSaveLoc;
-									}
+									//if(saved > 0) {
+									//	prevSaveLoc = maskSaveLoc;
+									//}
 									
 									maskSaveLoc = TCSMasks + maskName[currCell];
 
+									/*
 									if(saved > 0) {
 										open(prevSaveLoc);
 										print(TCSMasks + maskName[currCell-1]);
@@ -1388,6 +1389,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 										run('Close');
 	
 									}
+									*/
 									
 									saveImage("Connected", maskSaveLoc);
 									maskSuccess[currCell] = 1;

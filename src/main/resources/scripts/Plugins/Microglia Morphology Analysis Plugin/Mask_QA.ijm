@@ -375,7 +375,7 @@ function generateCellSomaMask(cellMaskLoc, cellLRLoc) {
 	run("Clear Results");
 	run("Set Measurements...", "area decimal=9");
 	setThreshold(1,255);
-	run("Analyze Particles...", "size=25-Infinity circularity=0.50-1.00 show=Masks display clear");
+	run("Analyze Particles...", "size=25-Infinity circularity=0.40-1.00 show=Masks display clear");
 	getStatistics(area, mean, min, max, std, histogram);
 
 	if(nResults > 0) {

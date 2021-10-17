@@ -8,5 +8,5 @@ Next iterations of this plugin will introduce functions that can be applied outs
 
 This repo is based on a repo designed to convert a collection of ImageJ script .ijm files into a plugin (https://github.com/imagej/example-script-collection). The README for that forked repo is now in the Legacy readme.md file.
 
-To create a .jar file from this repo, run 'mvn' in the terminal. The output .jar file will be saved in the /target folder.
+To create a .jar file from this repo, run 'mvn' in the terminal. The output .jar file will be saved in the /target folder. To do this you will need to have Maven installed.
 

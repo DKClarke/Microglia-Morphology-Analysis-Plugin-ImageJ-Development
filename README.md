@@ -10,3 +10,5 @@ This repo is based on a repo designed to convert a collection of ImageJ script .
 
 To create a .jar file from this repo, run 'mvn' in the terminal. The output .jar file will be saved in the /target folder. To do this you will need to have Maven installed.
 
+If running 'mvn' doesn't work, try 'sudo mvn' and if you are still encountering an enforcement error, try sudo mvn clean install -Denforcer.skip=true.
+

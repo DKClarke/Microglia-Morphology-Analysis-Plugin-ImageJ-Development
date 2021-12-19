@@ -13,7 +13,7 @@
 	</parent>
 
 	<artifactId>microglia-morphology-analysis</artifactId>
-	<version>0.1.5</version>
+	<version>0.1.6</version>
 
 	<name>Microglia Morphology Analysis ImageJ Plugin</name>
 	<description>A plugin used to facilitate a pipeline of analysis of microglial morphology.</description>

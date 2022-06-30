@@ -177,6 +177,28 @@ function parseIniValues(iniStrings, iniToOpen) {
 		
 	//We open the ini file as a string
 	iniText = File.openAsString(iniToOpen);	
+
+	//Here we compute how many full stops are in our ini file to ensure it is correctly formatted
+	periodCount = 0;
+    for(i = 0; i < iniText.length; i++ ) {
+		currentChar = iniText.charAt(i);
+        if(currentChar == ".") {
+            periodCount++;
+		}
+	}
+
+	//If we have less than 14, this means either the keys or values aren't properly formatted
+	//Inform the user and exit the macro
+	if(periodCount < 14) {
+		print('.ini file not valid');
+		print('Ensure the values are entered as doubles - e.g. instead of 28, 28.0');
+		print('Ensure the keys are entered as expected');
+		print('Expected keys: ');
+		for(i=0; i<iniStrings.length; i++) {
+			print(iniStrings[i]);
+		}
+		exit('.ini file not properly formatted; exiting plugin; see log for details');
+	}	
 	
 	iniValues = newArray(iniStrings.length);
 
@@ -1228,11 +1250,6 @@ function calibrateImage(windowName, iniValues) {
 
 function createCleanedStack(imagePath, iniValues, blurDetectorFrames, diffDetectorFrames, manuallyChosenFrames) {
 
-		//Get the total number of frames in our image
-		framesPerPlane = iniValues[4];
-		numberOfZPlanes = iniValues[3];
-		totalFrames = framesPerPlane * numberOfZPlanes;
-
 		//If we have manually chosen frames, get these
 		renameAs = "Timepoint";
 		manualFramesThisTimepoint = newArray('false');
@@ -1302,56 +1319,56 @@ function createProcessedImageStacks(imagesToProcessArray, directories, iniValues
 	if(imagesToProcessArray.length > 0) {
 		if(imagesToProcessArray[0] != 0) {
 
-			//For each image
-			for(currImage = 0; currImage<imagesToProcessArray.length; currImage++) {
+				//For each image
+				for(currImage = 0; currImage<imagesToProcessArray.length; currImage++) {
 
-				//Find the index of our current image to process in our imageName array
-				imageNameIndex = findMatchInArray(imagesToProcessArray[currImage], imageName);
+					//Find the index of our current image to process in our imageName array
+					imageNameIndex = findMatchInArray(imagesToProcessArray[currImage], imageName);
 
-				if(imageNameIndex == -1) {
-					exit("Issue here at line 1258");
+					if(imageNameIndex == -1) {
+						exit("Issue here at line 1258");
+					}
+					
+					print("Creating cleaned stack for ", imagesToProcessArray[currImage]);
+					imagePath = directories[0] + imagesToProcessArray[currImage];
+					open(imagePath);
+					
+					//Adjust the contrast in the stack
+					stackContrastAdjust(imagesToProcessArray[currImage]);
+					
+					//Expand its canvas
+					expandCanvas(imagesToProcessArray[currImage]);
+			
+					//Get our manually chosen frames if they exist
+					slicesToUseFile = directories[1] + File.getNameWithoutExtension(imagesToProcessArray[currImage]) + "/Slices To Use.csv";
+
+					manuallyChosenFrames = newArray('false');
+					if(File.exists(slicesToUseFile) == 1) {
+						print("Using manually chosen frames to create processed stack for", imagesToProcessArray[currImage]);
+						manuallyChosenFrames = getTableColumn(slicesToUseFile, "Slices");
+					} else {
+						print("Automatically choosing frames to create processed stack for", imagesToProcessArray[currImage]);
+					}	
+					
+					//Create a cleaned stack using these frames, or manually chosen frames
+					createCleanedStack(imagePath, iniValues, blurDetectorFrames, diffDetectorFrames, manuallyChosenFrames);
+						
+					//Save the output and move it to the done folder
+					saveAndMoveOutputImage(imagePath, directories);
+			
+					print("Image processing for ", imagesToProcessArray[currImage], " complete");
+
+					//Set our processing values to 1 
+					if(File.exists(slicesToUseFile) == 1) {
+						manualProcessed[imageNameIndex] = 1;
+					} else {
+						autoProcessed[imageNameIndex] = 1;
+					}
+
+					//Save these arrays into a table
+					saveImagesToUseTable(imageName, autoProcessed, autoPassedQA, manualProcessed, manualPassedQA, directories);
+					
 				}
-				
-				print("Creating cleaned stack for ", imagesToProcessArray[currImage]);
-				imagePath = directories[0] + imagesToProcessArray[currImage];
-				open(imagePath);
-				
-				//Adjust the contrast in the stack
-				stackContrastAdjust(imagesToProcessArray[currImage]);
-				
-				//Expand its canvas
-				expandCanvas(imagesToProcessArray[currImage]);
-		
-				//Get our manually chosen frames if they exist
-				slicesToUseFile = directories[1] + File.getNameWithoutExtension(imagesToProcessArray[currImage]) + "/Slices To Use.csv";
-				manuallyChosenFrames = newArray('false');
-				if(File.exists(slicesToUseFile) == 1) {
-					print("Using manually chosen frames to create processed stack for", imagesToProcessArray[currImage]);
-					manuallyChosenFrames = getTableColumn(slicesToUseFile, "Slices");
-				} else {
-					print("Automatically choosing frames to create processed stack for", imagesToProcessArray[currImage]);
-				}	
-				
-				//Create a cleaned stack using these frames, or manually chosen frames
-				createCleanedStack(imagePath, iniValues, blurDetectorFrames, diffDetectorFrames, manuallyChosenFrames);
-				
-				//Save the output and move it to the done folder
-				saveAndMoveOutputImage(imagePath, directories);
-		
-				print("Image processing for ", imagesToProcessArray[currImage], " complete");
-
-				//Set our processing values to 1 
-				if(File.exists(slicesToUseFile) == 1) {
-					manualProcessed[imageNameIndex] = 1;
-				} else {
-					autoProcessed[imageNameIndex] = 1;
-				}
-
-				//Save these arrays into a table
-				saveImagesToUseTable(imageName, autoProcessed, autoPassedQA, manualProcessed, manualPassedQA, directories);
-				
-			}
-		
 		} else {
 			print("No images to process");
 		}

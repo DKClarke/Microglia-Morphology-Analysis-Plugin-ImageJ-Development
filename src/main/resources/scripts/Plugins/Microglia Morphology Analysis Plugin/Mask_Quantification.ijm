@@ -545,7 +545,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 		imageNameRaw = File.getNameWithoutExtension(imageName[currImage]);
 
-		statusTable = directories[1]+imageNameRaw+"/Cell Coordinate Masks/Cell Position Marking.csv";
+		statusTable = directories[1]+ imageNameRaw + File.separator + "Cell Coordinate Masks" + File.separator +"Cell Position Marking.csv";
 
 		if(File.exists(statusTable) != 1) {
 			exit("Run 'Cell Detection' first");
@@ -559,7 +559,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 			print("Processing substack ", substackNames[currSubstack]);
 
-			tcsStatusTable = directories[1]+imageNameRaw+"/TCS Status Substack(" + substackNames[currSubstack] +").csv";
+			tcsStatusTable = directories[1]+imageNameRaw + File.separator + "TCS Status Substack(" + substackNames[currSubstack] +").csv";
 			
 			if(File.exists(tcsStatusTable) != 1) {
 				exit("Run 'Mask Generation' first");
@@ -576,7 +576,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 				//Set the path to where we copy our analysed cells to so we can run a fractal analysis on this folder in 
 				//batch at a later timepoint - if this directory doesn't exist, make it
-				fracLacPath = directories[1]+"fracLac/";
+				fracLacPath = directories[1]+"fracLac" + File.separator;
 				makeDirectories(newArray(fracLacPath));
 
 				//If we haven't finished analysing this TCS value
@@ -585,9 +585,9 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 					print("Quantifying masks for TCS value of ", tcsValue[TCSLoops]);
 
 					//This is the directory for the current TCS
-					TCSDir=directories[1]+imageNameRaw+"/"+"TCS"+tcsValue[TCSLoops]+"/";
-					TCSMasks = TCSDir + "Cell Masks/";
-					makeDirectories(newArray(TCSDir + "Results/"));
+					TCSDir=directories[1]+imageNameRaw + File.separator + "TCS"+tcsValue[TCSLoops] + File.separator;
+					TCSMasks = TCSDir + "Cell Masks" + File.separator;
+					makeDirectories(newArray(TCSDir + "Results" + File.separator));
 
 					cellMaskTable = TCSDir + "Substack (" + substackNames[currSubstack] + ") Mask Generation.csv";
 					
@@ -607,7 +607,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 					for(currCell=0; currCell<maskName.length; currCell++) {
 
 						substackCoordName = substring(maskName[currCell], indexOf(maskName[currCell], 'for'));
-						cellLRLoc = directories[1]+imageNameRaw+"/Local Regions/" + "Local region " + substackCoordName;
+						cellLRLoc = directories[1]+imageNameRaw + File.separator + "Local Regions" + File.separator + "Local region " + substackCoordName;
 
 						//If we've made a mask for this cell, and it passed QA, but it hasn't been quantified yet
 						if(maskSuccess[currCell] == 1 && maskQA[currCell] == 1 && maskQuant[currCell] == -1) {
@@ -615,7 +615,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 							print("Quantification for: ", maskName[currCell]);
 							print("Cell no.: ", currCell+1, " / ", maskName.length);
 
-							cellMaskLoc = TCSDir + "Cell Masks/" + maskName[currCell];
+							cellMaskLoc = TCSDir + "Cell Masks" + File.separator + maskName[currCell];
 			
 							//simpleParams is a list of the parameters we measure using the normal measurements function in
 							//imageJ
@@ -640,7 +640,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 							skelValues = getSkeletonMeasurements(cellMaskLoc, skelParams);
 
-							skeletonSaveLoc = TCSDir + "Results/" + 'Skeleton ' + File.getName(cellMaskLoc);
+							skeletonSaveLoc = TCSDir + "Results" + File.separator + 'Skeleton ' + File.getName(cellMaskLoc);
 							saveAndCloseImage('For Skeleton', skeletonSaveLoc);
 
 							//Get our simple shape measurements
@@ -652,7 +652,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 
 							distances = getCMToExtremaDistances(cellMaskLoc);
 
-							cellSpreadSaveLoc = TCSDir + "Results/" + 'Cell Spread ' + File.getName(cellMaskLoc);
+							cellSpreadSaveLoc = TCSDir + "Results" + File.separator + 'Cell Spread ' + File.getName(cellMaskLoc);
 
 							saveAndCloseImage('Cell Spread', cellSpreadSaveLoc);
 
@@ -664,7 +664,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 							calibratedDisMean = disMean * iniValues[0];
 							simpleValues[1] = calibratedDisMean;
 
-							somaName = directories[1]+imageNameRaw+"/Somas/Soma mask " + substackCoordName;
+							somaName = directories[1]+imageNameRaw + File.separator + "Somas" + File.separator + "Soma mask " + substackCoordName;
 							somaArea = getSomaArea(somaName);
 							simpleValues[4] = somaArea;
 
@@ -709,7 +709,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 							}
 
 							pythonText = File.openAsString(pyFileLocation); 
-							saveShollAs = TCSDir + "/Results/";
+							saveShollAs = TCSDir + File.separator + "Results" + File.separator;
 							call("ij.plugin.Macro_Runner.runPython", pythonText, "startRad="+startradius+",stepSize="+iniValues[0]+",saveLoc="+saveShollAs+",maskName="+maskName[currCell]+",tcsVal="+tcsValue[TCSLoops]+"");
 
 							selectWindow(File.getName(cellMaskLoc));
@@ -725,7 +725,7 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 							columnValues = Array.concat(simpleValues, skelValues);
 							columnNames = Array.concat(simpleParams, skelParams);
 
-							cellParameterTableLoc = TCSDir + "/Results/Cell Parameters " + File.getNameWithoutExtension(maskName[currCell]) +".csv";
+							cellParameterTableLoc = TCSDir + File.separator + "Results" + File.separator + "Cell Parameters " + File.getNameWithoutExtension(maskName[currCell]) +".csv";
 
 							//Retrieving the status of each mask we need to generate for the current substack (and TCS)
 							print("Saving cell parameters");

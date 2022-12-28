@@ -137,7 +137,7 @@ def main(imp, startRad, stepSize, saveLoc, maskName, cellName, tcsVal):
     # Parse the image. This may take a while depending on image size
     parser.parse()
     if not parser.successful():
-        log.error(imp.getTitle() + " could not be parsed!!!")
+        IJ.log(imp.getTitle() + " could not be parsed!!!")
         return
 
     # We can e.g., access the 'Sholl mask', a synthetic image in which foreground
@@ -150,7 +150,7 @@ def main(imp, startRad, stepSize, saveLoc, maskName, cellName, tcsVal):
     # Now we can access the Sholl profile:
     profile = parser.getProfile()
     if profile.isEmpty():
-        log.error("All intersection counts were zero! Invalid threshold range!?")
+        IJ.log("All intersection counts were zero! Invalid threshold range!?")
         return
 
     # Remove zeros here as otherwise this messes with polynomial fitting functions
@@ -218,11 +218,20 @@ args = getArgument()
 arg_dict = dict([x.split("=") for x in args.split(",")])
 startRad = float(arg_dict['startRad'])
 stepSize = float(arg_dict['stepSize'])
-saveLoc = str(arg_dict['saveLoc'])
+saveLocRaw = str(arg_dict['saveLoc'])
 maskName = str(arg_dict['maskName'])
 tcsVal = str(arg_dict['tcsVal'])
 
 cellName = os.path.splitext(maskName)[0]
+
+# If our file separator is a backslash, we need to replace the ^ in our input saveLocRaw with proper file separators
+# We have to do this as if we pass saveLocRaw with backslashes, getArgument() interprets it and will remove any escape characters
+# present in the file path
+if os.path.sep == "\\":
+    saveLocSplit = saveLocRaw.split('^')
+    saveLoc = os.sep.join(saveLocSplit)
+else:
+    saveLoc = saveLocRaw
 
 imp = IJ.getImage()
 main(imp, startRad, stepSize, saveLoc, maskName, cellName, tcsVal)

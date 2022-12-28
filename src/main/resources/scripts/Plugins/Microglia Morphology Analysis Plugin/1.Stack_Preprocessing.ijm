@@ -181,9 +181,16 @@ function parseIniValues(iniStrings, iniToOpen) {
 	//Here we compute how many full stops are in our ini file to ensure it is correctly formatted
 	periodCount = 0;
     for(i = 0; i < iniText.length; i++ ) {
+
+		//TODO figure out why the charAt function is leading to different outputs on windows and on mac
+		//On windows it returns a number, on Mac it returns.. a letter?
+
 		currentChar = iniText.charAt(i);
-        if(currentChar == ".") {
+		
+		if (File.separator == "\\" && currentChar == 46) {
             periodCount++;
+		} else if (currentChar == ".") {
+			periodCount++;
 		}
 	}
 

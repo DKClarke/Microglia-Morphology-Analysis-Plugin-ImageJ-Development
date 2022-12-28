@@ -135,7 +135,6 @@ def main(imp, startRad, stepSize, saveLoc, maskName, cellName, tcsVal):
     # Parse the image. This may take a while depending on image size
     parser.parse()
     if not parser.successful():
-        IJ.log(imp.getTitle() + " could not be parsed!!!")
         return
 
     # We can e.g., access the 'Sholl mask', a synthetic image in which foreground
@@ -148,7 +147,6 @@ def main(imp, startRad, stepSize, saveLoc, maskName, cellName, tcsVal):
     # Now we can access the Sholl profile:
     profile = parser.getProfile()
     if profile.isEmpty():
-        IJ.log("All intersection counts were zero! Invalid threshold range!?")
         return
 
     # Remove zeros here as otherwise this messes with polynomial fitting functions

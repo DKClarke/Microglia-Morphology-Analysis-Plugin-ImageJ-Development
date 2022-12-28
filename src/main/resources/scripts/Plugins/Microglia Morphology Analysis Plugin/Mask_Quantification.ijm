@@ -709,7 +709,21 @@ for (currImage=0; currImage<imageName.length; currImage++) {
 							}
 
 							pythonText = File.openAsString(pyFileLocation); 
-							saveShollAs = TCSDir + File.separator + "Results" + File.separator;
+
+							//Pull together the file directory where we want to save our results
+							saveShollAsRaw = TCSDir + "Results" + File.separator;
+							
+							//To avoid issues with escape characters in our file path when we pass it to our python file, we
+							//check here if our file separator is a backslash. If it is, replace them with ^
+							if (File.separator == "\\"){
+								saveShollAs = replace(saveShollAsRaw, "\\", "^");
+
+							//Else leave as is
+							} else {
+								saveShollAs = saveShollAsRaw;
+							}
+							
+							//Call our python file with our arguments
 							call("ij.plugin.Macro_Runner.runPython", pythonText, "startRad="+startradius+",stepSize="+iniValues[0]+",saveLoc="+saveShollAs+",maskName="+maskName[currCell]+",tcsVal="+tcsValue[TCSLoops]+"");
 
 							selectWindow(File.getName(cellMaskLoc));

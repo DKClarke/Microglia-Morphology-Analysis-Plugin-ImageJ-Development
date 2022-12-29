@@ -9,6 +9,7 @@ for Normalised stats = https://javadoc.scijava.org/Fiji/index.html?sc/fiji/snt/p
 
 # Import all the libraries we need to do our sholl analysis
 from ij import IJ
+import ij.IJ.log as log
 from ij.measure import Calibration
 from sc.fiji.snt import Tree
 from sc.fiji.snt.analysis.sholl import (Profile, ShollUtils)
@@ -135,6 +136,7 @@ def main(imp, startRad, stepSize, saveLoc, maskName, cellName, tcsVal):
     # Parse the image. This may take a while depending on image size
     parser.parse()
     if not parser.successful():
+        log('Could not parse image. Aborting sholl analysis')
         return
 
     # We can e.g., access the 'Sholl mask', a synthetic image in which foreground
@@ -147,6 +149,7 @@ def main(imp, startRad, stepSize, saveLoc, maskName, cellName, tcsVal):
     # Now we can access the Sholl profile:
     profile = parser.getProfile()
     if profile.isEmpty():
+        log('All intersection counts for this image are 0. Aborting sholl analysis')
         return
 
     # Remove zeros here as otherwise this messes with polynomial fitting functions

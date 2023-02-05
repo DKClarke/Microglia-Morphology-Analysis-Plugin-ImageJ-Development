@@ -187,10 +187,8 @@ function parseIniValues(iniStrings, iniToOpen) {
 
 		currentChar = iniText.charAt(i);
 		
-		if (File.separator == "\\" && currentChar == 46) {
+		if (currentChar == 46 || currentChar == ".") {
             periodCount++;
-		} else if (currentChar == ".") {
-			periodCount++;
 		}
 	}
 
